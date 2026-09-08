@@ -19,7 +19,7 @@ X 軸是時間,Y 軸是機構模組;每個模組從自己的起始格開始,按�
 
 填一張 CSV,按空白鍵播放,導出進標書。就這麼多。
 
-![開機畫面](assets/brand/splash/cycleview-splash-zh-TW-1120x600.png)
+![開機畫面](assets/brand/splash/splash-cycleview.png)
 
 ## 它解決什麼問題
 

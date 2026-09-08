@@ -19,7 +19,7 @@ X 轴是时间,Y 轴是机构模块;每个模块从自己的起始格开始,按�
 
 填一张 CSV,按空格键播放,导出进标书。就这么多。
 
-![开机画面](assets/brand/splash/cycleview-splash-zh-CN-1120x600.png)
+![开机画面](assets/brand/splash/splash-cycleview.png)
 
 ## 它解决什么问题
 

@@ -88,20 +88,19 @@ derivation is recorded in `NOTICE` and must stay there.
 - appId `com.dynmech.cycleview`, npm name `dynmech-cycleview`
 
 ### Visual identity
-Ink `#12161B`, paper `#FAF9F7`, drive blue `#1F5FE8`. **One blue accent per
-surface** — on the splash that budget is spent on the playhead. Brand assets
-live in `assets/brand/`; the mark is copied verbatim from the Dynmech VI and
-must not be redrawn. `assets/splash.html` is the splash source (SVG, 1120x600
-at 2x, shown in a 560x300 frameless window); the PNGs under
-`assets/brand/splash/` are exports of it, re-render them if the card changes.
+Ink `#12161B`, paper `#FAF9F7`, drive blue `#1F5FE8`. Brand assets live in
+`assets/brand/`; the mark is copied verbatim from the Dynmech VI and must not
+be redrawn.
 
-The splash wordmark is set in the Helvetica/Arial stack, **not** Archivo, even
-though the VI lockups specify Archivo — because the shipped DYNMECH Motion
-splash artwork is not Archivo either (measured: 465x62 ink at 1120x600, which
-Arial Bold matches exactly and Archivo does not, at either weight). Matching the
-sibling product beats matching the guide. Do not "fix" this to Archivo unless
-Motion's card is re-rendered in the same pass; see
-`assets/brand/fonts/README.md`, which ships the font ready for that day.
+The splash is a single static image, `assets/brand/splash/splash-cycleview.png`
+(1120x600 at 2x, shown in a 560x300 frameless window). `assets/splash.html`
+just displays it full-bleed — no per-locale text overlay, no loading
+animation, same image for every UI language. To change the splash, replace
+that PNG (it is supplied pre-rendered, not generated from this repo) and keep
+its dimensions; there is nothing else to re-render. The former SVG-sourced
+splash (hand-drawn wordmark, Helvetica-vs-Archivo font decision, per-locale
+tagline/status text baked into `assets/brand/fonts/`) was replaced and no
+longer applies.
 
 ### Rendering and timing architecture
 Three modules, and the invariant is that nothing duplicates them:

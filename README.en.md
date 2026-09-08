@@ -20,7 +20,7 @@ time, what is sitting idle, and which stretch owns the bottleneck.
 
 Fill in a CSV, hit space, export it into the bid. That's the whole tool.
 
-![Splash screen](assets/brand/splash/cycleview-splash-en-1120x600.png)
+![Splash screen](assets/brand/splash/splash-cycleview.png)
 
 ## What it's for
 

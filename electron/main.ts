@@ -20,17 +20,6 @@ const SPLASH_MIN_MS = 900
 // Backstop: never let a failed load leave an always-on-top card on screen.
 const SPLASH_MAX_MS = 12000
 
-/**
- * Splash language. The renderer owns the UI language (localStorage), which the
- * main process cannot read before the window exists, so the card follows the
- * OS locale — the same four variants Motion ships, English for anything else.
- * The menu starts from the same guess and is rebuilt once the renderer reports
- * its real language (see the i18n:set-language handler).
- */
-function splashLanguage(): string {
-  return i18n.getLanguage()
-}
-
 function applyMenu() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     Menu.setApplicationMenu(createMenu(mainWindow, menuState))
@@ -52,11 +41,11 @@ function createSplash() {
     alwaysOnTop: true,
     skipTaskbar: true,
     show: false,
-    backgroundColor: '#12161B',
+    backgroundColor: '#1B2160',
     webPreferences: { contextIsolation: true, nodeIntegration: false }
   })
 
-  splashWindow.loadFile(join(__dirname, '../assets/splash.html'), { hash: splashLanguage() })
+  splashWindow.loadFile(join(__dirname, '../assets/splash.html'))
   splashWindow.once('ready-to-show', () => {
     splashShownAt = Date.now()
     splashWindow?.show()

@@ -163,30 +163,47 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
   })
 
   // ---- Sheet 2: the chart as a time-bucket matrix -----------------------
-  const matrix = workbook.addWorksheet(SHEET_MATRIX, { views: [{ state: 'frozen', xSplit: 2, ySplit: 1 }] })
+  const matrix = workbook.addWorksheet(SHEET_MATRIX, { views: [{ state: 'frozen', xSplit: 3, ySplit: 1 }] })
   const stepMs = matrixStep(schedule.totalMs, config, layout)
   const bucketCount = Math.min(MATRIX_MAX_COLUMNS, Math.max(1, Math.ceil((schedule.totalMs + stepMs) / stepMs)))
-  const headerValues: string[] = ['编号', '动作 / 子动作']
+
+  // A bucket is only a few characters wide, so printing a time label above
+  // every one wraps "100ms" into a vertical stack. Label every N-th bucket
+  // instead, with enough empty buckets between labels to fit the text.
+  const longestLabel = formatTime(schedule.totalMs, config)
+  const labelChars = Math.max(4, longestLabel.length + 1)
+  const labelEvery = Math.max(1, Math.ceil(labelChars / Math.max(1, layout.matrixCellWidth)) + 1)
+
+  // Left columns carry the hierarchy: 类型 marks 模块 / 机构 / 动作 / 子动作,
+  // and the name is indented by tree depth so containment is visible at a glance.
+  const headerValues: string[] = ['编号', '类型', '模块 / 机构 / 动作']
   for (let i = 0; i < bucketCount; i++) {
-    headerValues.push(formatTime(i * stepMs, config))
+    headerValues.push(i % labelEvery === 0 ? formatTime(i * stepMs, config) : '')
   }
+  const LEFT_COLS = 3
   matrix.columns = headerValues.map((header, i) => ({
     header,
-    key: i === 0 ? 'code' : i === 1 ? 'action' : `t${i}`,
-    width: i < 2 ? (i === 0 ? 12 : 26) : layout.matrixCellWidth
+    key: i === 0 ? 'code' : i === 1 ? 'kind' : i === 2 ? 'action' : `t${i}`,
+    width: i === 0 ? 12 : i === 1 ? 12 : i === 2 ? 30 : layout.matrixCellWidth
   }))
   styleHeader(matrix, 1, headerValues.length, layout)
   matrix.getRow(1).height = layout.headerHeight
 
   tableRows.forEach(r => {
-    const row = matrix.addRow({ code: r.code, action: r.action })
+    const isSummary = r.kind === 'module' || r.kind === 'mechanism'
+    const row = matrix.addRow({ code: r.code, kind: KIND_LABELS[r.kind], action: r.action })
     row.height = layout.matrixRowHeight
-    row.font = { size: layout.fontSize, bold: r.kind === 'module' || r.kind === 'mechanism' }
-    const fill = r.kind === 'module' || r.kind === 'mechanism' ? lighten(r.color) : argb(r.color)
+    row.font = { size: layout.fontSize, bold: isSummary }
+    // Indent by hierarchy depth: 模块(0) → 机构(1) → 动作(2) → 子动作(3)…
+    row.getCell(3).alignment = { vertical: 'middle', horizontal: 'left', indent: Math.max(0, r.level - 1) }
+    const fill = isSummary ? lighten(r.color) : argb(r.color)
+    if (isSummary) {
+      row.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lighten(r.color) } }
+    }
     for (let i = 0; i < bucketCount; i++) {
       const bucketStart = i * stepMs
       const bucketEnd = bucketStart + stepMs
-      const cell = row.getCell(i + 3)
+      const cell = row.getCell(i + LEFT_COLS + 1)
       if (r.endMs > bucketStart && r.startMs < bucketEnd) {
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } }
         // Partial coverage is marked with a lighter tint, so the table still

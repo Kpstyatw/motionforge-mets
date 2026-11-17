@@ -54,6 +54,42 @@ function fixture(): ProjectData {
 }
 
 describe('Gantt ⇄ Excel', () => {
+  it('matrix sheet shows hierarchy columns and sparse time labels', async () => {
+    const project = fixture()
+    const schedule = computeSchedule(project.modules, CONFIG)
+    const rows = flattenTree(schedule)
+    const blob = await buildGanttWorkbook({ project, schedule, rows })
+
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(await blob.arrayBuffer())
+    const matrix = wb.getWorksheet('甘特矩阵')!
+    const header = matrix.getRow(1)
+
+    // Three left columns describe the hierarchy, with an explicit type column.
+    expect(header.getCell(1).value).toBe('编号')
+    expect(header.getCell(2).value).toBe('类型')
+    expect(header.getCell(3).value).toBe('模块 / 机构 / 动作')
+
+    // First data row is the 模块 summary: type cell reads 模块.
+    expect(matrix.getCell(2, 2).value).toBe('模块')
+    // The 子动作 row is indented (module row has 0 / no indent written).
+    const subRow = 6
+    expect(matrix.getCell(subRow, 2).value).toBe('子动作')
+    expect(matrix.getCell(subRow, 3).alignment?.indent ?? 0).toBeGreaterThan(
+      matrix.getCell(2, 3).alignment?.indent ?? 0
+    )
+
+    // Time labels are sparse: not every bucket column carries a label.
+    const timeHeaders: string[] = []
+    for (let c = 4; c <= header.cellCount; c++) {
+      timeHeaders.push(String(header.getCell(c).value ?? ''))
+    }
+    const labelled = timeHeaders.filter(v => v.length > 0).length
+    expect(labelled).toBeGreaterThan(0)
+    expect(labelled).toBeLessThan(timeHeaders.length) // not one label per column
+  })
+
   it('table rows carry exactly the resolved schedule values', () => {
     const project = fixture()
     const schedule = computeSchedule(project.modules, CONFIG)

@@ -333,6 +333,11 @@ export const useProjectStore = create<ProjectState>()(
         const next = state.project.modules.map(m => m.id === taskId
           ? {
               ...m,
+              // Adding a predecessor is an explicit request to let dependencies
+              // drive this task's start. A previously pinned (manual) start
+              // would silently swallow every dependency change, which reads as
+              // "editing the predecessor did nothing". Restore auto-follow.
+              startMode: 'auto' as StartMode,
               predecessors: [
                 ...(m.predecessors ?? []),
                 { id: uuidv4(), fromId, type, lagMs: Math.round(lagMs) }
@@ -356,6 +361,9 @@ export const useProjectStore = create<ProjectState>()(
         const next = state.project.modules.map(m => m.id === taskId
           ? {
               ...m,
+              // Editing a dependency (type / lag) must take effect on the
+              // successor's start time. A pinned manual anchor would hide it.
+              startMode: 'auto' as StartMode,
               predecessors: (m.predecessors ?? []).map(d =>
                 d.id === depId ? { ...d, ...patch, lagMs: patch.lagMs !== undefined ? Math.round(patch.lagMs) : d.lagMs } : d)
             }

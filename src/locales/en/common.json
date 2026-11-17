@@ -11,7 +11,9 @@
         "title": "Export",
         "csv": "Export as CSV",
         "pdf": "Export as PDF",
-        "mp4": "Export as MP4"
+        "mp4": "Export as MP4",
+        "excel": "Excel Gantt workbook",
+        "grid": "Beat grid (original view)"
       },
       "quit": "Quit"
     },
@@ -104,7 +106,10 @@
   "dialog": {
     "confirm": "Confirm",
     "cancel": "Cancel",
-    "ok": "OK"
+    "ok": "OK",
+    "add": "Add",
+    "apply": "Apply",
+    "close": "Close"
   },
   "error": {
     "fileNotFound": "File not found",
@@ -203,6 +208,9 @@
       "unsupported": "H.264 encoding is unavailable on this system, so MP4 export is disabled",
       "rendering": "Rendering video",
       "cancel": "Cancel export"
+    },
+    "excel": {
+      "description": "Timing table + Gantt matrix + settings/dependencies, custom cell sizes, round-trip import."
     }
   },
   "help": {
@@ -301,5 +309,112 @@
     "banner": "Want this in your proposal? The desktop app exports the follow-playback MP4 and a PDF report.",
     "sharedFooter": "This chart was shared from DYNMECH CycleView. Download the desktop app to edit and export it.",
     "dismiss": "Dismiss"
+  },
+  "gantt": {
+    "title": "Action Timing Gantt",
+    "total": "Cycle time",
+    "scale": "Scale",
+    "precision": "Precision",
+    "timeSettings": "Time scale",
+    "excel": "Excel conversion",
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all",
+    "hideSubActions": "Hide all sub-actions",
+    "hidden": "rows hidden",
+    "addChild": "Add child",
+    "addModule": "Add module",
+    "addNode": "Add hierarchy node",
+    "hierarchy": "Module / Mechanism / Action / Sub-action",
+    "hierarchyPanel": "Hierarchy & actions",
+    "startEnd": "Start–End (ms)",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "fit": "Fit to window",
+    "visibleCount": "Visible rows",
+    "taskCount": "Nodes",
+    "sideHint": "Click to select, double-click to edit; arrows show the dependency chain.",
+    "editSelected": "Edit selected",
+    "kind": {
+      "module": "Module",
+      "mechanism": "Mechanism",
+      "action": "Action",
+      "subaction": "Sub-action"
+    },
+    "newKind": {
+      "module": "New module",
+      "mechanism": "New mechanism",
+      "action": "New action",
+      "subaction": "New sub-action"
+    },
+    "taskEditor": "Task editor",
+    "name": "Name",
+    "stage": "Stage",
+    "mechanism": "Mechanism / module",
+    "timing": "Timing (integer ms)",
+    "start": "Start (ms)",
+    "duration": "Duration (ms)",
+    "end": "End (ms)",
+    "timeHint": "Accepts 1234, 1234ms, 1.234s, 01:23.456. Changing any predecessor cascades to every successor start.",
+    "summaryHint": "Summary row: bounds roll up from all descendants and cannot be edited directly.",
+    "startMode": "Start mode",
+    "auto": "Follow dependencies (auto)",
+    "manual": "Pin start (never before dependencies)",
+    "constraint": "Earliest allowed by deps",
+    "clamped": "Pushed by dependencies",
+    "invalidTime": "Invalid time format",
+    "predecessors": "Predecessors",
+    "selectPred": "Select predecessor",
+    "add": "Add",
+    "remove": "Remove",
+    "noPreds": "No predecessors yet; start is set by this task itself.",
+    "summaryNoDeps": "Summary rows cannot have predecessors; set them on actions or sub-actions.",
+    "successors": "Successors",
+    "noCandidate": "No available predecessor",
+    "cycleBlocked": "Would create a dependency cycle",
+    "level": "Level",
+    "levelUnit": "",
+    "children": "direct children",
+    "path": "Sub-actions can be nested to any depth",
+    "deleteTask": "Delete task (incl. sub-actions)",
+    "confirmDelete": "Delete this task, all its sub-actions and related dependencies?",
+    "nodeKind": "Node type",
+    "nestHint": "A sub-action can be the parent of another sub-action, with no depth limit.",
+    "parent": "Parent",
+    "rootHint": "Will create a top-level module"
+  },
+  "timeScale": {
+    "title": "Time scale & precision",
+    "scale": "Scale (ms / division)",
+    "precision": "Precision (ms)",
+    "scaleHint": "Scale can be 1 ms; all computation uses integer milliseconds.",
+    "precisionHint": "Minimum 1 ms; every instant snaps to a multiple of this value.",
+    "unit": "Ruler unit",
+    "gantt": "Gantt view",
+    "rowHeight": "Row height (px)",
+    "showDeps": "Show dependency arrows",
+    "showSummaries": "Show parent summary brackets",
+    "note": "Changing scale/precision re-quantises and cascades every successor start; Gantt, beat grid, PDF, MP4 and Excel all read the new values."
+  },
+  "excel": {
+    "title": "Gantt ⇄ Excel conversion",
+    "intro": "Sheet 1 is the exact millisecond table; sheet 2 expands the chart into time columns; sheet 3 stores settings, hierarchy and dependencies for round-trip import.",
+    "matrixStep": "Matrix column span",
+    "cellSize": "Cell dimensions (customisable)",
+    "rowHeight": "Row height (pt)",
+    "headerHeight": "Header height (pt)",
+    "fontSize": "Font size (pt)",
+    "matrixCellWidth": "Matrix column width (chars)",
+    "matrixRowHeight": "Matrix row height (pt)",
+    "columnWidths": "Column widths (chars)",
+    "includeHidden": "Export rows hidden by collapse",
+    "export": "Export Excel",
+    "import": "Import Excel (write back to Gantt)",
+    "verify": "Verify consistency",
+    "verified": "Verified {{count}} rows; chart and table data are consistent, no conflicts.",
+    "issues": "inconsistencies",
+    "exportFailed": "Excel export failed",
+    "importFailed": "Excel import failed",
+    "imported": "Imported {{count}} rows and re-scheduled from dependencies; chart and table are in sync.",
+    "importOk": "Excel imported"
   }
 }

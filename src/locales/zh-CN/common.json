@@ -11,7 +11,9 @@
         "title": "导出",
         "csv": "导出为CSV",
         "pdf": "导出为PDF",
-        "mp4": "导出为MP4"
+        "mp4": "导出为MP4",
+        "excel": "Excel 甘特表",
+        "grid": "节拍网格（原有视图）"
       },
       "quit": "退出"
     },
@@ -104,7 +106,10 @@
   "dialog": {
     "confirm": "确认",
     "cancel": "取消",
-    "ok": "确定"
+    "ok": "确定",
+    "add": "添加",
+    "apply": "应用",
+    "close": "关闭"
   },
   "error": {
     "fileNotFound": "文件未找到",
@@ -203,6 +208,9 @@
       "unsupported": "当前系统不支持 H.264 编码，无法导出 MP4",
       "rendering": "正在渲染视频",
       "cancel": "取消导出"
+    },
+    "excel": {
+      "description": "动作时序表 + 甘特矩阵 + 设置/依赖，单元格尺寸可自定义，支持导回。"
     }
   },
   "help": {
@@ -301,5 +309,112 @@
     "banner": "想把这段演示放进方案里？桌面版可导出跟随播放的 MP4 和 PDF 报告。",
     "sharedFooter": "这是用 DYNMECH CycleView 分享的节拍图。下载桌面版即可编辑并导出。",
     "dismiss": "关闭"
+  },
+  "gantt": {
+    "title": "动作时序甘特图",
+    "total": "总节拍",
+    "scale": "刻度",
+    "precision": "精度",
+    "timeSettings": "时间刻度",
+    "excel": "Excel 转换",
+    "expandAll": "全部展开",
+    "collapseAll": "全部折叠",
+    "hideSubActions": "隐藏所有子动作",
+    "hidden": "行已隐藏",
+    "addChild": "新增下级",
+    "addModule": "新增模块",
+    "addNode": "新增层级节点",
+    "hierarchy": "模块 / 机构 / 动作 / 子动作",
+    "hierarchyPanel": "层级与操作",
+    "startEnd": "起止 (ms)",
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "fit": "适应窗口",
+    "visibleCount": "可见行",
+    "taskCount": "节点数",
+    "sideHint": "单击选中，双击编辑；箭头显示依赖链路。",
+    "editSelected": "编辑选中",
+    "kind": {
+      "module": "模块",
+      "mechanism": "机构",
+      "action": "动作",
+      "subaction": "子动作"
+    },
+    "newKind": {
+      "module": "新模块",
+      "mechanism": "新机构",
+      "action": "新动作",
+      "subaction": "新子动作"
+    },
+    "taskEditor": "任务编辑",
+    "name": "名称",
+    "stage": "阶段",
+    "mechanism": "所属机构 / 模块",
+    "timing": "时序（整数毫秒）",
+    "start": "开始 (ms)",
+    "duration": "持续时长 (ms)",
+    "end": "结束 (ms)",
+    "timeHint": "支持 1234、1234ms、1.234s、01:23.456；修改任一前置任务后，所有后置动作起始时间自动级联重算。",
+    "summaryHint": "汇总行：起止时间由所有后代任务自动卷算，不可直接编辑。",
+    "startMode": "起始方式",
+    "auto": "跟随依赖（自动）",
+    "manual": "锁定起始（不早于依赖）",
+    "constraint": "依赖最早允许",
+    "clamped": "已按依赖顺延",
+    "invalidTime": "时间格式无效",
+    "predecessors": "前置任务",
+    "selectPred": "选择前置任务",
+    "add": "新增",
+    "remove": "删除",
+    "noPreds": "暂无前置任务，起始时间由自身设置决定。",
+    "summaryNoDeps": "模块 / 机构汇总行不支持前置任务；请在动作或子动作上设置。",
+    "successors": "后置任务",
+    "noCandidate": "没有可添加的前置任务",
+    "cycleBlocked": "会形成循环依赖",
+    "level": "第",
+    "levelUnit": "层",
+    "children": "个直接子级",
+    "path": "可继续添加子动作的子动作",
+    "deleteTask": "删除任务（含子动作）",
+    "confirmDelete": "删除该任务及其所有子动作、相关依赖？",
+    "nodeKind": "节点类型",
+    "nestHint": "子动作可作为另一个子动作的上级，层数不限。",
+    "parent": "上级",
+    "rootHint": "将创建顶层模块"
+  },
+  "timeScale": {
+    "title": "时间刻度与精度",
+    "scale": "时间刻度 (ms/格)",
+    "precision": "时间精度 (ms)",
+    "scaleHint": "刻度可设为 1 ms；所有计算按整数毫秒进行。",
+    "precisionHint": "最小 1 ms；所有时刻吸附到该精度的整数倍。",
+    "unit": "刻度显示单位",
+    "gantt": "甘特视图",
+    "rowHeight": "行高 (px)",
+    "showDeps": "显示依赖连线",
+    "showSummaries": "显示父级汇总括号",
+    "note": "修改刻度/精度后，依赖引擎会重新量化并级联重算所有后置动作；甘特图、节拍网格、PDF、MP4 与 Excel 同步取新值。"
+  },
+  "excel": {
+    "title": "甘特图 ⇄ Excel 转换",
+    "intro": "第 1 页为精确毫秒表；第 2 页把图表按时间列展开为甘特矩阵；第 3 页保存设置、层级与依赖，可再导回。",
+    "matrixStep": "矩阵列跨度",
+    "cellSize": "单元格尺寸（可自定义）",
+    "rowHeight": "行高 (pt)",
+    "headerHeight": "表头高 (pt)",
+    "fontSize": "字号 (pt)",
+    "matrixCellWidth": "矩阵列宽 (字符)",
+    "matrixRowHeight": "矩阵行高 (pt)",
+    "columnWidths": "各列宽度（字符）",
+    "includeHidden": "导出被隐藏（已折叠）的子动作行",
+    "export": "导出 Excel",
+    "import": "导入 Excel（回写甘特图）",
+    "verify": "校验一致性",
+    "verified": "已校验 {{count}} 行；图表与表格数据一致，无冲突。",
+    "issues": "处不一致",
+    "exportFailed": "Excel 导出失败",
+    "importFailed": "Excel 导入失败",
+    "imported": "已导入 {{count}} 行并按依赖重新排程；甘特图与表格已同步。",
+    "importOk": "Excel 已导入"
   }
 }

@@ -118,6 +118,7 @@ export async function exportToMP4(
   const viewport = { width, height }
 
   const animationMs = computeTotalDurationMs(modules)
+  const scaleMs = config.scaleMs ?? 100
   const playbackMs = animationMs / speed
   const totalMs = playbackMs + tailHoldSeconds * 1000
   const frameCount = Math.max(1, Math.ceil((totalMs / 1000) * fps))
@@ -165,7 +166,7 @@ export async function exportToMP4(
   // Camera plumbing: content bounds at a given zoom, and the tick length in
   // 60fps frames so the easing feels the same as on screen at any fps.
   const contentSize = (zoom: number) =>
-    computeCanvasSize(modules, config.cellWidth * zoom, config.cellHeight * zoom)
+    computeCanvasSize(modules, config.cellWidth * zoom, config.cellHeight * zoom, scaleMs)
   const maxScroll = (zoom: number) => {
     const size = contentSize(zoom)
     return { left: Math.max(0, size.width - width), top: Math.max(0, size.height - height) }
@@ -173,10 +174,10 @@ export async function exportToMP4(
   const framesPerTick = 1000 / fps / FOLLOW_TICK_MS
 
   let camera: CameraState = { zoom: clampFollowZoom(baseZoom), scrollLeft: 0, scrollTop: 0 }
-  let lastRegion = computeActiveRegion(modules, 0)
+  let lastRegion = computeActiveRegion(modules, 0, scaleMs)
 
   const advanceCamera = (animMs: number, frames: number) => {
-    const region = computeActiveRegion(modules, animMs) ?? lastRegion
+    const region = computeActiveRegion(modules, animMs, scaleMs) ?? lastRegion
     if (!region) return
     lastRegion = region
     const cameraTarget = computeFollowTarget(

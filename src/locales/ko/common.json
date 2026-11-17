@@ -11,7 +11,9 @@
         "title": "내보내기",
         "csv": "CSV로 내보내기",
         "pdf": "PDF로 내보내기",
-        "mp4": "MP4로 내보내기"
+        "mp4": "MP4로 내보내기",
+        "excel": "Excel 간트 통합 문서",
+        "grid": "박자 격자 (기존 보기)"
       },
       "quit": "종료"
     },
@@ -104,7 +106,10 @@
   "dialog": {
     "confirm": "확인",
     "cancel": "취소",
-    "ok": "확인"
+    "ok": "확인",
+    "add": "추가",
+    "apply": "적용",
+    "close": "닫기"
   },
   "error": {
     "fileNotFound": "파일을 찾을 수 없습니다",
@@ -203,6 +208,9 @@
       "unsupported": "이 시스템에서는 H.264 인코딩을 사용할 수 없어 MP4 내보내기가 비활성화되었습니다",
       "rendering": "동영상 렌더링 중",
       "cancel": "내보내기 취소"
+    },
+    "excel": {
+      "description": "타이밍 표 + 간트 행렬 + 설정/의존. 셀 크기를 지정할 수 있고 다시 가져올 수 있습니다."
     }
   },
   "help": {
@@ -301,5 +309,112 @@
     "banner": "이 데모를 제안서에 넣고 싶으신가요? 데스크톱 앱에서 재생 따라가기 MP4와 PDF 보고서를 내보낼 수 있습니다.",
     "sharedFooter": "이 차트는 DYNMECH CycleView에서 공유되었습니다. 편집과 내보내기는 데스크톱 앱을 다운로드하세요.",
     "dismiss": "닫기"
+  },
+  "gantt": {
+    "title": "동작 타이밍 간트 차트",
+    "total": "총 사이클",
+    "scale": "눈금",
+    "precision": "정밀도",
+    "timeSettings": "시간 눈금",
+    "excel": "Excel 변환",
+    "expandAll": "모두 펼치기",
+    "collapseAll": "모두 접기",
+    "hideSubActions": "모든 하위 동작 숨기기",
+    "hidden": "행 숨김",
+    "addChild": "하위 추가",
+    "addModule": "모듈 추가",
+    "addNode": "계층 노드 추가",
+    "hierarchy": "모듈 / 기구 / 동작 / 하위 동작",
+    "hierarchyPanel": "계층 및 작업",
+    "startEnd": "시작–종료 (ms)",
+    "zoomIn": "확대",
+    "zoomOut": "축소",
+    "fit": "창에 맞춤",
+    "visibleCount": "표시 행",
+    "taskCount": "노드 수",
+    "sideHint": "클릭하여 선택, 더블 클릭하여 편집. 화살표는 의존 체인입니다.",
+    "editSelected": "선택 항목 편집",
+    "kind": {
+      "module": "모듈",
+      "mechanism": "기구",
+      "action": "동작",
+      "subaction": "하위 동작"
+    },
+    "newKind": {
+      "module": "새 모듈",
+      "mechanism": "새 기구",
+      "action": "새 동작",
+      "subaction": "새 하위 동작"
+    },
+    "taskEditor": "작업 편집",
+    "name": "이름",
+    "stage": "단계",
+    "mechanism": "소속 기구 / 모듈",
+    "timing": "타이밍 (정수 ms)",
+    "start": "시작 (ms)",
+    "duration": "지속 시간 (ms)",
+    "end": "종료 (ms)",
+    "timeHint": "1234, 1234ms, 1.234s, 01:23.456 지원. 선행 작업 변경 시 모든 후속 작업 시작이 연쇄 재계산됩니다.",
+    "summaryHint": "요약 행: 시작/종료는 모든 하위 항목에서 자동 집계되며 직접 편집할 수 없습니다.",
+    "startMode": "시작 방식",
+    "auto": "의존 따름 (자동)",
+    "manual": "시작 고정 (의존보다 빠르지 않게)",
+    "constraint": "의존이 허용하는 최초 시각",
+    "clamped": "의존에 의해 연기됨",
+    "invalidTime": "시간 형식이 잘못됨",
+    "predecessors": "선행 작업",
+    "selectPred": "선행 작업 선택",
+    "add": "추가",
+    "remove": "삭제",
+    "noPreds": "선행 작업이 없습니다. 시작은 이 작업 자체로 결정됩니다.",
+    "summaryNoDeps": "요약 행에는 선행 작업을 설정할 수 없습니다. 동작 또는 하위 동작에 설정하세요.",
+    "successors": "후속 작업",
+    "noCandidate": "추가 가능한 선행 작업 없음",
+    "cycleBlocked": "의존 순환이 발생합니다",
+    "level": "레벨",
+    "levelUnit": "",
+    "children": "직계 하위",
+    "path": "하위 동작 아래에 또 다른 하위 동작을 추가할 수 있습니다",
+    "deleteTask": "작업 삭제 (하위 동작 포함)",
+    "confirmDelete": "이 작업과 모든 하위 동작, 관련 의존을 삭제하시겠습니까?",
+    "nodeKind": "노드 유형",
+    "nestHint": "하위 동작은 다른 하위 동작의 부모가 될 수 있으며 깊이 제한이 없습니다.",
+    "parent": "상위",
+    "rootHint": "최상위 모듈을 만듭니다"
+  },
+  "timeScale": {
+    "title": "시간 눈금 및 정밀도",
+    "scale": "시간 눈금 (ms/칸)",
+    "precision": "시간 정밀도 (ms)",
+    "scaleHint": "눈금은 1 ms까지 설정 가능하며 모든 계산은 정수 밀리초로 수행됩니다.",
+    "precisionHint": "최소 1 ms. 모든 시각은 이 정밀도의 정수배로 맞춰집니다.",
+    "unit": "눈금 표시 단위",
+    "gantt": "간트 보기",
+    "rowHeight": "행 높이 (px)",
+    "showDeps": "의존 화살표 표시",
+    "showSummaries": "상위 요약 괄호 표시",
+    "note": "눈금/정밀도를 바꾸면 의존 엔진이 재양자화하고 모든 후속 작업을 연쇄 재계산합니다. 간트, 격자, PDF, MP4, Excel 이 모두 새 값을 사용합니다."
+  },
+  "excel": {
+    "title": "간트 ⇄ Excel 변환",
+    "intro": "시트1은 정확한 ms 표, 시트2는 시간 열로 펼친 간트 행렬, 시트3은 설정·계층·의존을 저장해 다시 가져올 수 있습니다.",
+    "matrixStep": "행렬 열 간격",
+    "cellSize": "셀 크기 (사용자 지정)",
+    "rowHeight": "행 높이 (pt)",
+    "headerHeight": "헤더 높이 (pt)",
+    "fontSize": "글자 크기 (pt)",
+    "matrixCellWidth": "행렬 열 너비 (문자)",
+    "matrixRowHeight": "행렬 행 높이 (pt)",
+    "columnWidths": "열 너비 (문자)",
+    "includeHidden": "접혀 숨겨진 하위 동작도 내보내기",
+    "export": "Excel 내보내기",
+    "import": "Excel 가져오기 (간트에 반영)",
+    "verify": "일치성 검증",
+    "verified": "{{count}}행 검증 완료. 차트와 표 데이터가 일치하며 충돌이 없습니다.",
+    "issues": "건 불일치",
+    "exportFailed": "Excel 내보내기 실패",
+    "importFailed": "Excel 가져오기 실패",
+    "imported": "{{count}}행을 가져와 의존관계로 재배치했으며 차트와 표가 동기화되었습니다.",
+    "importOk": "Excel 가져오기 완료"
   }
 }

@@ -1,6 +1,7 @@
 import { ModuleData } from '@/types'
 import { RenderConfig, computeContentSize, renderTimingFrameSvg } from '@/lib/canvasRenderer'
-import { computeActionStartTimes, computeTotalDurationMs, groupModulesByName } from '@/lib/timingModel'
+import { computeTotalDurationMs, endMsOf, startMsOf } from '@/lib/timingModel'
+import { computeSchedule, serializePredecessors } from '@/lib/dependencyEngine'
 
 /**
  * PDF report.
@@ -34,6 +35,8 @@ export interface PdfReportLabels {
     intervalTime: string
     startTime: string
     endTime: string
+    kind?: string
+    predecessors?: string
   }
 }
 
@@ -76,22 +79,13 @@ interface TableRow {
  * 12 cells at 80ms, the report says it runs from 800ms to 1760ms.
  */
 export function buildReportRows(modules: ModuleData[]): TableRow[] {
-  const byModule = new Map<ModuleData, TableRow>()
-
-  groupModulesByName(modules).forEach(group => {
-    const startTimes = computeActionStartTimes(group.modules)
-    group.modules.forEach((module, index) => {
-      const startTime = startTimes[index]
-      byModule.set(module, {
-        module,
-        startTime,
-        endTime: startTime + module.moveCount * module.duration
-      })
-    })
-  })
-
-  // Preserve the on-screen row order rather than the grouping order.
-  return modules.map(m => byModule.get(m)).filter((r): r is TableRow => Boolean(r))
+  // The report uses the same canonical ms values as the chart and the Excel
+  // sheet; grouping/cell arithmetic no longer decides any report number.
+  return modules.map(module => ({
+    module,
+    startTime: startMsOf(module),
+    endTime: endMsOf(module)
+  }))
 }
 
 export interface PdfReportDocument {
@@ -108,7 +102,9 @@ export function buildPdfReport(input: PdfReportInput): PdfReportDocument {
 
   const totalMs = computeTotalDurationMs(modules)
   // Tight bounds: a printed page should not be two thirds empty grid.
-  const { width, height } = computeContentSize(modules, config.cellWidth, config.cellHeight)
+  const { width, height } = computeContentSize(
+    modules, config.cellWidth, config.cellHeight, config.scaleMs ?? 100
+  )
 
   // The report shows the completed cycle: every track fully coloured. A frozen
   // mid-animation frame would be meaningless on paper.
@@ -122,6 +118,10 @@ export function buildPdfReport(input: PdfReportInput): PdfReportDocument {
 
   const rows = buildReportRows(modules)
   const c = labels.columns
+  const schedule = computeSchedule(modules, { scaleMs: config.scaleMs ?? 100 })
+  const KIND_TEXT: Record<string, string> = {
+    module: '模块', mechanism: '机构', action: '动作', subaction: '子动作'
+  }
 
   const tableRows = rows
     .map(
@@ -134,6 +134,8 @@ export function buildPdfReport(input: PdfReportInput): PdfReportDocument {
         <td class="num">${module.duration}</td>
         <td class="num">${Math.round(startTime)}</td>
         <td class="num">${Math.round(endTime)}</td>
+        <td>${escapeHtml(KIND_TEXT[module.kind ?? 'action'] ?? '动作')}</td>
+        <td>${escapeHtml(serializePredecessors(module.predecessors, schedule.byId))}</td>
       </tr>`
     )
     .join('')
@@ -213,6 +215,8 @@ export function buildPdfReport(input: PdfReportInput): PdfReportDocument {
           <th>${escapeHtml(c.intervalTime)}</th>
           <th>${escapeHtml(c.startTime)}</th>
           <th>${escapeHtml(c.endTime)}</th>
+          <th>${escapeHtml(c.kind ?? '类型')}</th>
+          <th>${escapeHtml(c.predecessors ?? '前置任务')}</th>
         </tr>
       </thead>
       <tbody>${tableRows}</tbody>

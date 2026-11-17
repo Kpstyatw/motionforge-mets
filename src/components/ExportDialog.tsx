@@ -18,12 +18,14 @@ import {
   FaDownload,
   FaFilePdf,
   FaFileCode,
-  FaFileVideo
+  FaFileVideo,
+  FaFileExcel
 } from 'react-icons/fa'
 
 interface ExportDialogProps {
   isOpen: boolean
   onClose: () => void
+  onOpenExcel?: () => void
 }
 
 const FPS_CHOICES = [24, 30, 60]
@@ -40,7 +42,7 @@ function safeFileStem(name: string | undefined): string {
   return cleaned || 'cycleview'
 }
 
-export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose }) => {
+export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onOpenExcel }) => {
   const { t } = useTranslation()
   const { project } = useProjectStore()
   const { grid, animation, ui } = usePreferencesStore()
@@ -66,7 +68,11 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose }) =
     gridColor: '#e5e5e5',
     backgroundColor: '#ffffff',
     defaultFillColor: '#3b82f6',
-    textDisplay: ui.canvasTextDisplay
+    textDisplay: ui.canvasTextDisplay,
+    scaleMs: project?.timeConfig?.scaleMs ?? 100,
+    precisionMs: project?.timeConfig?.precisionMs ?? 1,
+    displayUnit: project?.timeConfig?.displayUnit ?? 'ms',
+    showDependencies: true
   })
 
   if (!isOpen) return null
@@ -84,7 +90,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose }) =
 
     setIsExporting(true)
     try {
-      exportToCSV(project.modules, { format: 'csv', includeCalculatedPositions })
+      exportToCSV(project.modules, { format: 'csv', includeCalculatedPositions }, project.timeConfig)
       onClose()
     } catch (error) {
       console.error('Export failed:', error)
@@ -224,6 +230,27 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose }) =
                 {t('export.csv.includeCalculated')}
               </label>
             </div>
+          </div>
+
+          {/* Excel Export */}
+          <div className="border rounded-lg p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FaFileExcel className="text-emerald-600" />
+                <span className="font-medium">{t('menu.file.export.excel', { defaultValue: 'Excel 甘特表' })}</span>
+              </div>
+              <button
+                onClick={() => { onOpenExcel?.(); onClose() }}
+                disabled={isExporting}
+                className="px-3 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1"
+              >
+                <FaDownload className="text-xs" />
+                {t('export.action')}
+              </button>
+            </div>
+            <p className="text-sm text-gray-600 mt-1">
+              {t('export.excel.description', { defaultValue: '动作时序表 + 甘特矩阵 + 设置/依赖，单元格尺寸可自定义，支持导回。' })}
+            </p>
           </div>
 
           {/* MP4 Export */}

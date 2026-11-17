@@ -1,14 +1,21 @@
-import { ModuleData } from '@/types'
-import { computeActionStartTimes, groupModulesByName } from './timingModel'
+import { ModuleData, TimeConfig } from '@/types'
+import { computeActionStartTimes, startMsOf, durationMsOf } from './timingModel'
 import { CanvasSurface, DrawSurface, SvgSurface } from './drawSurface'
+import { formatTime, normalizeTimeConfig } from './timeScale'
 
 /**
  * Timing chart renderer — every pixel of the chart is drawn here.
  *
  * Drawing goes through DrawSurface, so the same code produces the on-screen
  * canvas, the frames handed to the MP4 encoder, and the vector chart embedded
- * in the PDF report. If one of the three ever looks different from the others,
- * it is a bug in a caller, not three copies of the drawing code drifting apart.
+ * in the PDF report.
+ *
+ * Gantt edition: geometry is now **millisecond-based**. `cellWidth` is the
+ * width of one `scaleMs` division, so `pxPerMs = cellWidth / scaleMs`. Bars are
+ * drawn from the canonical `startMs` / `durationMs` written by the scheduling
+ * engine; the grid lines are just ruler ticks. This is what makes a 1 ms
+ * action visible at the 1 ms scale and keeps screen, video, PDF and Excel in
+ * agreement.
  */
 
 /** Height reserved for the ruler, matching the parameter table's header. */
@@ -16,92 +23,92 @@ export const HEADER_HEIGHT = 40
 
 /** Width of the row-number ruler down the right edge. */
 const RULER_WIDTH = 30
-
 const RULER_FONT_FAMILY = 'monospace'
 const RULER_FONT_SIZE = 10
 
-// Same stack the PDF report uses, so a CJK action name looks the same on
-// screen, in the MP4 and on paper instead of falling back to whatever the
-// platform picks for a bare "sans-serif".
 const LABEL_FONT_FAMILY =
   '"Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK SC", "Noto Sans CJK KR", system-ui, sans-serif'
 const LABEL_INK = '#12161B'
 const LABEL_HALO = 'rgba(255, 255, 255, 0.92)'
 const LABEL_HALO_WIDTH = 3
+const MIN_LABEL_FONT_SIZE = 6
+const LINK_COLOR = '#f97316'
 
-/**
- * Label size follows the row height, so a taller grid — or a zoomed-in view,
- * which arrives here as a taller row — gets proportionally larger text.
- */
 function labelFontSize(cellHeight: number): number {
   return Math.round(Math.min(22, cellHeight * 0.42))
 }
 
-/** Below this the label is noise: it cannot be read and it spills onto neighbouring rows. */
-const MIN_LABEL_FONT_SIZE = 6
-
 export interface RenderConfig {
+  /** Pixel width of one `scaleMs` division. */
   cellWidth: number
   cellHeight: number
   gridColor: string
   backgroundColor: string
   defaultFillColor: string
   textDisplay: 'module' | 'stage' | 'action'
+  /** Milliseconds per grid division. Defaults to 100 for legacy callers. */
+  scaleMs?: number
+  precisionMs?: number
+  displayUnit?: TimeConfig['displayUnit']
+  /** Paint dependency arrows in the classic grid as well as the Gantt view. */
+  showDependencies?: boolean
 }
 
 export const DEFAULT_RENDER_CONFIG: Omit<RenderConfig, 'cellWidth' | 'cellHeight'> = {
   gridColor: '#e5e5e5',
   backgroundColor: '#ffffff',
   defaultFillColor: '#3b82f6',
-  textDisplay: 'action'
+  textDisplay: 'action',
+  scaleMs: 100,
+  precisionMs: 1,
+  displayUnit: 'ms',
+  showDependencies: true
 }
 
-/**
- * Natural size of the chart for a given module set. The screen clamps this to a
- * minimum of 800x600 so an empty project still shows a grid; the exporters use
- * the same numbers so their framing matches what the user was looking at.
- */
+function pxPerMsOf(config: RenderConfig): number {
+  return config.cellWidth / Math.max(1, config.scaleMs ?? 100)
+}
+
+function timeConfigOf(config: RenderConfig): TimeConfig {
+  return normalizeTimeConfig({
+    scaleMs: config.scaleMs,
+    precisionMs: config.precisionMs,
+    displayUnit: config.displayUnit
+  })
+}
+
+/** Natural size of the chart for a given module set. */
 export function computeCanvasSize(
   modules: ModuleData[],
   cellWidth: number,
-  cellHeight: number
+  cellHeight: number,
+  scaleMs = 100
 ): { width: number; height: number } {
-  if (!modules.length) {
-    return { width: 800, height: 600 }
-  }
-
-  const maxEndX =
-    Math.max(...modules.map(m => (m.calculatedStartX ?? m.startX) + m.moveCount)) + 10
-
+  const config = { cellWidth, cellHeight, scaleMs } as RenderConfig
+  const px = pxPerMsOf(config)
+  const step = Math.max(1, scaleMs)
+  if (!modules.length) return { width: 800, height: 600 }
+  const maxEndMs = Math.max(...modules.map(m => startMsOf(m) + durationMsOf(m)))
   return {
-    width: Math.max(800, maxEndX * cellWidth),
+    width: Math.max(800, (maxEndMs + step * 2) * px + RULER_WIDTH),
     height: Math.max(600, HEADER_HEIGHT + modules.length * cellHeight + 100)
   }
 }
 
-/**
- * Tight size for print/export: no 800x600 floor and only a little padding.
- *
- * The on-screen size deliberately fills the window, which on a four-module
- * project means twenty empty rows. On paper that is just wasted page, and it
- * shrinks the chart — so the report measures the content instead.
- */
+/** Tight size for print/export: no 800x600 floor and only a little padding. */
 export function computeContentSize(
   modules: ModuleData[],
   cellWidth: number,
-  cellHeight: number
+  cellHeight: number,
+  scaleMs = 100
 ): { width: number; height: number } {
-  if (!modules.length) {
-    return { width: 800, height: 600 }
-  }
-
-  const maxEndX =
-    Math.max(...modules.map(m => (m.calculatedStartX ?? m.startX) + m.moveCount))
-  // Enough columns to clear the row-number ruler, plus one for breathing room.
-  const trailingColumns = Math.ceil((RULER_WIDTH + cellWidth) / cellWidth)
-
+  const config = { cellWidth, cellHeight, scaleMs } as RenderConfig
+  const px = pxPerMsOf(config)
+  const step = Math.max(1, scaleMs)
+  if (!modules.length) return { width: 800, height: 600 }
+  const maxEndMs = Math.max(...modules.map(m => startMsOf(m) + durationMsOf(m)))
   return {
-    width: (maxEndX + trailingColumns) * cellWidth,
+    width: (maxEndMs + step * 2) * px + RULER_WIDTH,
     height: HEADER_HEIGHT + (modules.length + 1) * cellHeight
   }
 }
@@ -124,13 +131,10 @@ export function drawGrid(
   config: RenderConfig,
   headerHeight: number
 ) {
-  // Offset by 0.5 so hairlines land on a pixel boundary rather than blurring.
   for (let x = 0; x <= width; x += config.cellWidth) {
     surface.line(x + 0.5, 0, x + 0.5, height, config.gridColor, 0.5)
   }
-
   surface.line(0, headerHeight + 0.5, width, headerHeight + 0.5, config.gridColor, 0.5)
-
   for (let y = headerHeight; y <= height; y += config.cellHeight) {
     surface.line(0, y + 0.5, width, y + 0.5, config.gridColor, 0.5)
   }
@@ -152,30 +156,24 @@ export function drawRuler(
     fontFamily: RULER_FONT_FAMILY,
     align: 'center' as const
   }
-
-  // Label every 5th column, or a coarser multiple of 5 once the cells are
-  // narrow enough (zoomed out) that adjacent numbers would collide.
-  const columnStep = 5 * Math.max(1, Math.ceil(40 / (5 * config.cellWidth)))
-  for (let i = 0; i < width / config.cellWidth; i += columnStep) {
+  const time = timeConfigOf(config)
+  const step = time.scaleMs
+  // Thin labels so they don't collide when zoomed out.
+  const divisions = Math.max(1, Math.ceil(46 / Math.max(1, config.cellWidth)))
+  for (let i = 0; i * config.cellWidth <= width; i += divisions) {
     surface.text(
-      String(i),
+      formatTime(i * step, time),
       i * config.cellWidth + config.cellWidth / 2,
       headerHeight / 2,
       rulerText
     )
   }
 
-  // Same for row numbers: skip rows shorter than the digits are tall.
   const rowStep = Math.max(1, Math.ceil(RULER_FONT_SIZE / config.cellHeight))
   let rowIndex = 0
   for (let y = headerHeight + config.cellHeight; y < height; y += config.cellHeight) {
     if (rowIndex % rowStep === 0) {
-      surface.text(
-        String(rowIndex + 1),
-        width - RULER_WIDTH / 2,
-        y - config.cellHeight / 2,
-        rulerText
-      )
+      surface.text(String(rowIndex + 1), width - RULER_WIDTH / 2, y - config.cellHeight / 2, rulerText)
     }
     rowIndex++
   }
@@ -184,53 +182,83 @@ export function drawRuler(
 /** Label shown inside a module's track, per the user's text-display preference. */
 export function moduleLabel(module: ModuleData, textDisplay: RenderConfig['textDisplay']): string {
   switch (textDisplay) {
-    case 'module':
-      return module.moduleName
-    case 'stage':
-      return module.stage || ''
+    case 'module': return module.moduleName
+    case 'stage': return module.stage || ''
     case 'action':
-    default:
-      return module.actionDescription
+    default: return module.actionDescription
   }
 }
 
-/** The static track for every module: the cells it will eventually occupy. */
+/** The static track for every module: the exact ms interval it will occupy. */
 export function drawModuleTracksAligned(
   surface: DrawSurface,
   modules: ModuleData[],
   config: RenderConfig,
   headerHeight: number
 ) {
-  let currentY = headerHeight
-
-  modules.forEach(module => {
-    const actualStartX = module.calculatedStartX ?? module.startX
+  const px = pxPerMsOf(config)
+  const step = Math.max(1, config.scaleMs ?? 100)
+  modules.forEach((module, row) => {
+    const start = startMsOf(module)
+    const end = start + durationMsOf(module)
+    if (end <= start) return
+    const x = start * px
+    const y = headerHeight + row * config.cellHeight
+    const w = (end - start) * px
     const color = module.color || config.defaultFillColor
 
-    for (let i = 0; i < module.moveCount; i++) {
-      const cellX = (actualStartX + i) * config.cellWidth
-      surface.rect(cellX, currentY, config.cellWidth, config.cellHeight, {
-        fill: hexToRgba(color, 0.2)
-      })
-      surface.rect(cellX + 0.5, currentY + 0.5, config.cellWidth - 1, config.cellHeight - 1, {
-        stroke: color,
-        lineWidth: 0.5
-      })
+    surface.rect(x, y, w, config.cellHeight, { fill: hexToRgba(color, 0.2) })
+    surface.rect(x + 0.5, y + 0.5, w - 1, config.cellHeight - 1, { stroke: color, lineWidth: 0.5 })
+    // Cell separators inside the bar keep the original "beat grid" look.
+    const first = Math.ceil(start / step) * step
+    for (let t = first; t < end - 0.0001; t += step) {
+      const lx = t * px
+      surface.line(lx + 0.5, y, lx + 0.5, y + config.cellHeight, color, 0.5)
     }
-
-    currentY += config.cellHeight
   })
 }
 
 /**
- * Track labels, painted last so they sit on top of the animation fill.
- *
- * A label straddles cells in every state at once — the 20% tint of an idle
- * track, the 80% fill of a finished one, and the half-filled cell in between —
- * so no single text colour can win against the background. Ink text with a
- * paper outline works on all of them: on the tint it is simply dark on light,
- * on the fill the outline separates the glyphs from the colour.
+ * Dependency arrows. Drawn with the tiny DrawSurface API (lines only), so the
+ * same arrows appear on screen, in MP4 frames and in the vector PDF.
  */
+export function drawDependencyLinks(
+  surface: DrawSurface,
+  modules: ModuleData[],
+  config: RenderConfig,
+  headerHeight: number
+) {
+  const px = pxPerMsOf(config)
+  const rowOf = new Map(modules.map((m, i) => [m.id, i]))
+  const byId = new Map(modules.map(m => [m.id, m]))
+
+  modules.forEach(succ => {
+    const succRow = rowOf.get(succ.id) ?? 0
+    const succStart = startMsOf(succ)
+    const succEnd = succStart + durationMsOf(succ)
+    ;(succ.predecessors ?? []).forEach(dep => {
+      const pred = byId.get(dep.fromId)
+      if (!pred) return
+      const predRow = rowOf.get(pred.id) ?? 0
+      const predStart = startMsOf(pred)
+      const predEnd = predStart + durationMsOf(pred)
+      const fromX = (dep.type === 'SS' || dep.type === 'SF' ? predStart : predEnd) * px
+      const toX = (dep.type === 'FF' || dep.type === 'SF' ? succEnd : succStart) * px
+      const fromY = headerHeight + predRow * config.cellHeight + config.cellHeight / 2
+      const toY = headerHeight + succRow * config.cellHeight + config.cellHeight / 2
+
+      const elbowX = Math.max(fromX + 8, toX - 12)
+      surface.line(fromX, fromY, elbowX, fromY, LINK_COLOR, 1)
+      surface.line(elbowX, fromY, elbowX, toY, LINK_COLOR, 1)
+      surface.line(elbowX, toY, toX, toY, LINK_COLOR, 1)
+      // Arrowhead (two short strokes).
+      surface.line(toX, toY, toX - 6, toY - 3, LINK_COLOR, 1)
+      surface.line(toX, toY, toX - 6, toY + 3, LINK_COLOR, 1)
+    })
+  })
+}
+
+/** Track labels, painted last so they sit on top of the animation fill. */
 export function drawModuleLabels(
   surface: DrawSurface,
   modules: ModuleData[],
@@ -239,15 +267,12 @@ export function drawModuleLabels(
 ) {
   const fontSize = labelFontSize(config.cellHeight)
   if (fontSize < MIN_LABEL_FONT_SIZE) return
-
+  const px = pxPerMsOf(config)
   modules.forEach((module, rowIndex) => {
     const label = moduleLabel(module, config.textDisplay)
     if (!label) return
-
-    const actualStartX = module.calculatedStartX ?? module.startX
-    const textX = actualStartX * config.cellWidth + 4
+    const textX = startMsOf(module) * px + 4
     const textY = headerHeight + rowIndex * config.cellHeight + config.cellHeight / 2
-
     surface.text(label, textX, textY, {
       fill: LABEL_INK,
       fontSize,
@@ -267,70 +292,24 @@ export function drawAnimationOverlay(
   headerHeight: number,
   coloringMode: 'gradual' | 'instant' = 'gradual'
 ) {
-  const moduleToRowIndex = new Map<ModuleData, number>()
-  modules.forEach((module, index) => moduleToRowIndex.set(module, index))
-
-  groupModulesByName(modules).forEach(group => {
-    const actionStartTimes = computeActionStartTimes(group.modules)
-
-    group.modules.forEach((module, actionIndex) => {
-      const rowIndex = moduleToRowIndex.get(module) ?? 0
-      const currentY = headerHeight + rowIndex * config.cellHeight
-      const actionStartTime = actionStartTimes[actionIndex]
-
-      if (currentFrame < actionStartTime) return
-
-      const color = module.color || config.defaultFillColor
-      const activeFill = hexToRgba(color, 0.8)
-      const actualStartX = module.calculatedStartX ?? module.startX
-      const elapsedInAction = currentFrame - actionStartTime
-
-      if (coloringMode === 'instant') {
-        // Each cell snaps to full colour, then holds for its duration.
-        const currentCellIndex = Math.floor(elapsedInAction / module.duration)
-
-        for (let i = 0; i <= Math.min(currentCellIndex, module.moveCount - 1); i++) {
-          const cellX = (actualStartX + i) * config.cellWidth
-          surface.rect(cellX, currentY, config.cellWidth, config.cellHeight, { fill: activeFill })
-          surface.rect(cellX + 0.5, currentY + 0.5, config.cellWidth - 1, config.cellHeight - 1, {
-            stroke: color,
-            lineWidth: 0.5
-          })
-        }
-
-        if (currentCellIndex < module.moveCount) {
-          const cellX = (actualStartX + currentCellIndex) * config.cellWidth
-          surface.rect(cellX + 0.5, currentY + 0.5, config.cellWidth - 1, config.cellHeight - 1, {
-            stroke: color,
-            lineWidth: 1.5
-          })
-        }
-        return
-      }
-
-      // Gradual: completed cells filled, the active cell filled proportionally.
-      const cellsCompleted = Math.floor(elapsedInAction / module.duration)
-      const currentCellProgress = (elapsedInAction % module.duration) / module.duration
-
-      for (let i = 0; i < Math.min(cellsCompleted, module.moveCount); i++) {
-        const cellX = (actualStartX + i) * config.cellWidth
-        surface.rect(cellX, currentY, config.cellWidth, config.cellHeight, { fill: activeFill })
-        surface.rect(cellX + 0.5, currentY + 0.5, config.cellWidth - 1, config.cellHeight - 1, {
-          stroke: color,
-          lineWidth: 0.5
-        })
-      }
-
-      if (cellsCompleted < module.moveCount && currentCellProgress > 0) {
-        const cellX = (actualStartX + cellsCompleted) * config.cellWidth
-        surface.rect(cellX, currentY, config.cellWidth * currentCellProgress, config.cellHeight, {
-          fill: activeFill
-        })
-        surface.rect(cellX + 0.5, currentY + 0.5, config.cellWidth - 1, config.cellHeight - 1, {
-          stroke: color,
-          lineWidth: 1.5
-        })
-      }
+  const px = pxPerMsOf(config)
+  const step = Math.max(1, config.scaleMs ?? 100)
+  modules.forEach((module, row) => {
+    const start = startMsOf(module)
+    const duration = durationMsOf(module)
+    if (duration <= 0 || currentFrame < start) return
+    const elapsed = currentFrame - start
+    let filledMs = Math.min(duration, elapsed)
+    if (coloringMode === 'instant') {
+      filledMs = Math.min(duration, Math.ceil(elapsed / step) * step)
+    }
+    if (filledMs <= 0) return
+    const y = headerHeight + row * config.cellHeight
+    const color = module.color || config.defaultFillColor
+    surface.rect(start * px, y, filledMs * px, config.cellHeight, { fill: hexToRgba(color, 0.8) })
+    surface.rect(start * px + 0.5, y + 0.5, filledMs * px - 1, config.cellHeight - 1, {
+      stroke: color,
+      lineWidth: 0.5
     })
   })
 }
@@ -344,23 +323,13 @@ export function drawCrosshair(
   canvasHeight: number
 ) {
   if (mouseX < 0 || mouseY < 0) return
-
   ctx.save()
   ctx.strokeStyle = '#ff0000'
   ctx.lineWidth = 1
   ctx.globalAlpha = 0.7
   ctx.setLineDash([5, 5])
-
-  ctx.beginPath()
-  ctx.moveTo(mouseX, 0)
-  ctx.lineTo(mouseX, canvasHeight)
-  ctx.stroke()
-
-  ctx.beginPath()
-  ctx.moveTo(0, mouseY)
-  ctx.lineTo(canvasWidth, mouseY)
-  ctx.stroke()
-
+  ctx.beginPath(); ctx.moveTo(mouseX, 0); ctx.lineTo(mouseX, canvasHeight); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(0, mouseY); ctx.lineTo(canvasWidth, mouseY); ctx.stroke()
   ctx.restore()
 }
 
@@ -377,22 +346,19 @@ export interface RenderFrameOptions {
 
 function paintFrame(surface: DrawSurface, options: RenderFrameOptions) {
   const {
-    modules,
-    config,
-    width,
-    height,
-    currentFrame,
-    coloringMode = 'gradual',
-    headerHeight = HEADER_HEIGHT
+    modules, config, width, height, currentFrame,
+    coloringMode = 'gradual', headerHeight = HEADER_HEIGHT
   } = options
 
   surface.rect(0, 0, width, height, { fill: config.backgroundColor })
-
   drawGrid(surface, width, height, config, headerHeight)
   drawRuler(surface, width, height, config, headerHeight)
 
   if (modules.length > 0) {
     drawModuleTracksAligned(surface, modules, config, headerHeight)
+    if (config.showDependencies !== false) {
+      drawDependencyLinks(surface, modules, config, headerHeight)
+    }
     if (currentFrame > 0) {
       drawAnimationOverlay(surface, modules, config, currentFrame, headerHeight, coloringMode)
     }
@@ -405,13 +371,14 @@ export function renderTimingFrame(ctx: CanvasRenderingContext2D, options: Render
   paintFrame(new CanvasSurface(ctx), options)
 }
 
-/**
- * Render the chart as standalone SVG markup, for embedding in the PDF report.
- * Pass `currentFrame: Infinity` for the finished state — the chart with every
- * module's track fully coloured, which is what a printed report should show.
- */
+/** Render the chart as standalone SVG markup, for embedding in the PDF report. */
 export function renderTimingFrameSvg(options: RenderFrameOptions): string {
   const surface = new SvgSurface(options.width, options.height)
   paintFrame(surface, options)
   return surface.toSvg()
+}
+
+/** Re-exported for the stage progress bars in the parameter table. */
+export function actionStartTimes(group: ModuleData[]): number[] {
+  return computeActionStartTimes(group)
 }

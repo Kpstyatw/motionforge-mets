@@ -41,6 +41,7 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({ width: _, height: __ }) 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const { project } = useProjectStore()
+  const scaleMs = Math.max(1, project?.timeConfig?.scaleMs ?? 100)
   const { zoom, zoomIn, zoomOut, followPlayback, followBaseZoom, applyFollowZoom } = useUIStore()
   const { currentFrame } = useAnimationStore()
   const { grid, animation, ui } = usePreferencesStore()
@@ -76,10 +77,10 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({ width: _, height: __ }) 
 
   // Calculate canvas dimensions based on project data
   useEffect(() => {
-    setCanvasSize(computeCanvasSize(project?.modules ?? [], CELL_WIDTH, ROW_HEIGHT))
+    setCanvasSize(computeCanvasSize(project?.modules ?? [], CELL_WIDTH, ROW_HEIGHT, scaleMs))
     // Force re-render when grid dimensions change
     setRenderKey(prev => prev + 1)
-  }, [project, CELL_WIDTH, ROW_HEIGHT])
+  }, [project, CELL_WIDTH, ROW_HEIGHT, scaleMs])
 
   // Main rendering function
   useEffect(() => {
@@ -100,7 +101,11 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({ width: _, height: __ }) 
       gridColor: '#e5e5e5',
       backgroundColor: '#ffffff',
       defaultFillColor: '#3b82f6',
-      textDisplay: ui.canvasTextDisplay
+      textDisplay: ui.canvasTextDisplay,
+      scaleMs,
+      precisionMs: project?.timeConfig?.precisionMs ?? 1,
+      displayUnit: project?.timeConfig?.displayUnit ?? 'ms',
+      showDependencies: true
     }
 
     // Same call the MP4 exporter makes, so screen and video cannot drift apart.
@@ -131,7 +136,8 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({ width: _, height: __ }) 
     animation,
     ui.canvasTextDisplay,
     ui.crosshairEnabled,
-    mousePosition
+    mousePosition,
+    scaleMs
   ])
 
   // Force re-render when project changes
@@ -164,7 +170,7 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({ width: _, height: __ }) 
     const modules = project?.modules ?? []
     if (!container || modules.length === 0) return
 
-    const region = computeActiveRegion(modules, currentFrame) ?? lastActiveRegionRef.current
+    const region = computeActiveRegion(modules, currentFrame, scaleMs) ?? lastActiveRegionRef.current
     if (!region) return
     lastActiveRegionRef.current = region
 
@@ -212,7 +218,7 @@ export const GridCanvas: React.FC<GridCanvasProps> = ({ width: _, height: __ }) 
       followLoopRef.current = settled ? null : setTimeout(tick, FOLLOW_TICK_MS)
     }
     followLoopRef.current = setTimeout(tick, FOLLOW_TICK_MS)
-  }, [followPlayback, currentFrame, followBaseZoom, project, grid.cellWidth, grid.cellHeight, applyFollowZoom])
+  }, [followPlayback, currentFrame, followBaseZoom, project, grid.cellWidth, grid.cellHeight, applyFollowZoom, scaleMs])
 
   // The same in-view guarantee applied synchronously with every frame the
   // canvas paints, so the cells never sit outside the viewport for even the

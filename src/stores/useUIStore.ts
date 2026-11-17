@@ -24,9 +24,16 @@ export const clampZoom = (zoom: number) =>
 export const clampFollowZoom = (zoom: number) =>
   Math.max(FOLLOW_MIN_ZOOM, Math.min(MAX_ZOOM, zoom))
 
+export type ChartView = 'gantt' | 'grid'
+
 interface UIState {
   sidebarCollapsed: boolean
   zoom: number
+  /** Gantt view is the default; the original beat grid stays available. */
+  chartView: ChartView
+  selectedTaskId: string | null
+  /** Collapsed hierarchy nodes: sub-actions and their descendants are hidden. */
+  collapsedTaskIds: string[]
   /**
    * Follow playback: the canvas keeps the cells being painted in view by
    * scrolling, and zooms out when they will not fit. `followBaseZoom` is the
@@ -48,6 +55,13 @@ interface UIState {
   /** Zoom applied by the follow camera; leaves the user's base level alone. */
   applyFollowZoom: (zoom: number) => void
   setTheme: (theme: 'light' | 'dark' | 'auto') => void
+  setChartView: (view: ChartView) => void
+  setSelectedTask: (id: string | null) => void
+  toggleCollapsed: (id: string) => void
+  setCollapsedTasks: (ids: string[]) => void
+  expandAll: () => void
+  /** Collapse every action/subaction node: hide all sub-actions at once. */
+  collapseAllSubActions: (actionIds: string[]) => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -55,6 +69,9 @@ export const useUIStore = create<UIState>()(
     // Initial state
     sidebarCollapsed: false,
     zoom: 1,
+    chartView: 'gantt',
+    selectedTaskId: null,
+    collapsedTaskIds: [],
     followPlayback: false,
     followBaseZoom: 1,
     theme: 'auto',
@@ -105,6 +122,17 @@ export const useUIStore = create<UIState>()(
 
     setTheme: (theme) => set((state) => {
       state.theme = theme
-    })
+    }),
+
+    setChartView: view => set(state => { state.chartView = view }),
+    setSelectedTask: id => set(state => { state.selectedTaskId = id }),
+    toggleCollapsed: id => set(state => {
+      const index = state.collapsedTaskIds.indexOf(id)
+      if (index >= 0) state.collapsedTaskIds.splice(index, 1)
+      else state.collapsedTaskIds.push(id)
+    }),
+    setCollapsedTasks: ids => set(state => { state.collapsedTaskIds = [...ids] }),
+    expandAll: () => set(state => { state.collapsedTaskIds = [] }),
+    collapseAllSubActions: actionIds => set(state => { state.collapsedTaskIds = [...actionIds] })
   }))
 )

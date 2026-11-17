@@ -9,7 +9,7 @@ import { useHistoryStore } from '@/stores/useHistoryStore'
 import { GridCanvas } from '@/components/Canvas/GridCanvas'
 import { ParameterTable } from '@/components/ParameterTable'
 import { FaPlay, FaPause, FaStop, FaRedo, FaCog, FaDownload } from 'react-icons/fa'
-import { ZoomIn, ZoomOut, Maximize, LocateFixed, FileUp, Loader2 } from 'lucide-react'
+import { ZoomIn, ZoomOut, Maximize, LocateFixed, FileUp, Loader2, Clock3, Table2, LayoutGrid, GanttChartSquare } from 'lucide-react'
 import { useUIStore, MAX_ZOOM, MIN_ZOOM } from '@/stores/useUIStore'
 import { computeContentSize } from '@/lib/canvasRenderer'
 import { PreferencesDialog } from '@/components/PreferencesDialog'
@@ -25,6 +25,12 @@ import { HelpDialog } from '@/components/HelpDialog'
 import { UserGuideDialog } from '@/components/UserGuideDialog'
 import { DropdownMenu } from '@/components/DropdownMenu'
 import { SpeedSettingsDialog } from '@/components/SpeedSettingsDialog'
+import { GanttView } from '@/components/GanttView'
+import { GanttSidePanel } from '@/components/GanttSidePanel'
+import { TaskEditorDialog } from '@/components/TaskEditorDialog'
+import { TimeScaleDialog } from '@/components/TimeScaleDialog'
+import { ExcelDialog } from '@/components/ExcelDialog'
+import { AddNodeDialog } from '@/components/AddNodeDialog'
 import { IS_ONLINE, ONLINE_DISABLED_COMMANDS } from '@/lib/platform'
 import { readSharedCsv } from '@/lib/shareLink'
 import {
@@ -57,7 +63,10 @@ function App() {
     toggleLoop
   } = useAnimationStore()
   const { ui, grid, updateUIPreferences } = usePreferencesStore()
-  const { zoom, zoomIn, zoomOut, setZoom, resetZoom, followPlayback, toggleFollowPlayback } = useUIStore()
+  const {
+    zoom, zoomIn, zoomOut, setZoom, resetZoom, followPlayback, toggleFollowPlayback,
+    chartView, setChartView, selectedTaskId, setSelectedTask
+  } = useUIStore()
   const { undo, redo } = useHistoryStore()
   const canvasContainerRef = useRef<HTMLDivElement>(null)
   // const animationRef = useRef<number | null>(null)
@@ -69,6 +78,13 @@ function App() {
   const [helpOpen, setHelpOpen] = useState(false)
   const [userGuideOpen, setUserGuideOpen] = useState(false)
   const [speedSettingsOpen, setSpeedSettingsOpen] = useState(false)
+  const [timeScaleOpen, setTimeScaleOpen] = useState(false)
+  const [excelOpen, setExcelOpen] = useState(false)
+  const [editorTaskId, setEditorTaskId] = useState<string | null>(null)
+  const [addNode, setAddNode] = useState<{ open: boolean; parentId: string | null }>({ open: false, parentId: null })
+
+  const openAddChild = (parentId: string | null) => setAddNode({ open: true, parentId })
+  const openEditor = (id: string) => { setSelectedTask(id); setEditorTaskId(id) }
 
   // Speed control functions
   const speedUp = () => {
@@ -127,7 +143,10 @@ function App() {
   const fitToWindow = () => {
     const container = canvasContainerRef.current
     if (!container) return
-    const content = computeContentSize(project?.modules ?? [], grid.cellWidth, grid.cellHeight)
+    const content = computeContentSize(
+      project?.modules ?? [], grid.cellWidth, grid.cellHeight,
+      project?.timeConfig?.scaleMs ?? 100
+    )
     const margin = 16
     const fit = Math.min(
       (container.clientWidth - margin) / content.width,
@@ -306,7 +325,11 @@ function App() {
         {/* Sidebar - Fixed width, always visible */}
         <div className="w-80 border-r bg-muted/50 overflow-hidden flex flex-col flex-shrink-0">
           <div className="flex-1 min-h-0 overflow-hidden">
-            <ParameterTable />
+            {chartView === 'gantt' ? (
+              <GanttSidePanel onAddChild={openAddChild} onEditTask={openEditor} />
+            ) : (
+              <ParameterTable />
+            )}
           </div>
         </div>
         
@@ -346,6 +369,48 @@ function App() {
                     <ShareButton modules={project?.modules ?? []} />
                   </>
                 )}
+
+                {/* View switch: Gantt (default) / original beat grid */}
+                <div className="flex items-center gap-1 border-l pl-4">
+                  <button
+                    onClick={() => setChartView('gantt')}
+                    className={`p-2 text-sm border rounded transition-colors ${chartView === 'gantt' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
+                    title={t('gantt.title', { defaultValue: '动作时序甘特图' })}
+                    aria-pressed={chartView === 'gantt'}
+                  >
+                    <GanttChartSquare className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setChartView('grid')}
+                    className={`p-2 text-sm border rounded transition-colors ${chartView === 'grid' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
+                    title={t('menu.file.export.grid', { defaultValue: '节拍网格（原有视图）' })}
+                    aria-pressed={chartView === 'grid'}
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setTimeScaleOpen(true)}
+                    className="p-2 text-sm border rounded hover:bg-accent transition-colors"
+                    title={t('timeScale.title', { defaultValue: '时间刻度与精度' })}
+                  >
+                    <Clock3 className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setExcelOpen(true)}
+                    className="p-2 text-sm border rounded hover:bg-accent transition-colors"
+                    title={t('excel.title', { defaultValue: '甘特图 ⇄ Excel' })}
+                  >
+                    <Table2 className="h-3.5 w-3.5" />
+                  </button>
+                  {selectedTaskId && (
+                    <button
+                      onClick={() => openEditor(selectedTaskId)}
+                      className="px-2 py-1 text-xs border rounded hover:bg-accent transition-colors"
+                    >
+                      {t('gantt.editSelected', { defaultValue: '编辑选中' })}
+                    </button>
+                  )}
+                </div>
 
                 {/* Playback Controls */}
                 <div className="flex items-center gap-2 border-l pl-4">
@@ -459,7 +524,16 @@ function App() {
           
           {/* Canvas */}
           <div ref={canvasContainerRef} className="relative flex-1 min-h-0 bg-muted/20 overflow-hidden">
-            <GridCanvas width={800} height={600} />
+            {chartView === 'gantt' ? (
+              <GanttView
+                onEditTask={openEditor}
+                onOpenTimeScale={() => setTimeScaleOpen(true)}
+                onOpenExcel={() => setExcelOpen(true)}
+                onAddChild={openAddChild}
+              />
+            ) : (
+              <GridCanvas width={800} height={600} />
+            )}
             {IS_ONLINE && <PlaybackEndBanner />}
           </div>
           
@@ -509,10 +583,31 @@ function App() {
         isOpen={preferencesOpen} 
         onClose={() => setPreferencesOpen(false)} 
       />
-      <ExportDialog 
-        isOpen={exportOpen} 
-        onClose={() => setExportOpen(false)} 
+      <ExportDialog
+        isOpen={exportOpen}
+        onClose={() => setExportOpen(false)}
+        onOpenExcel={() => setExcelOpen(true)}
       />
+      <TimeScaleDialog
+        isOpen={timeScaleOpen}
+        onClose={() => setTimeScaleOpen(false)}
+      />
+      <ExcelDialog
+        isOpen={excelOpen}
+        onClose={() => setExcelOpen(false)}
+      />
+      <TaskEditorDialog
+        taskId={editorTaskId}
+        onClose={() => setEditorTaskId(null)}
+        onAddChild={(parentId) => { setEditorTaskId(null); openAddChild(parentId) }}
+      />
+      {addNode.open && (
+        <AddNodeDialog
+          parentId={addNode.parentId}
+          onClose={() => setAddNode({ open: false, parentId: null })}
+          onCreated={id => openEditor(id)}
+        />
+      )}
       <AboutDialog 
         isOpen={aboutOpen} 
         onClose={() => setAboutOpen(false)} 

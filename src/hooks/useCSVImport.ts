@@ -8,7 +8,7 @@ import { IS_ONLINE, ONLINE_ROW_LIMIT } from '@/lib/platform'
 export function useCSVImport() {
   const { t } = useTranslation()
   const [isImporting, setIsImporting] = useState(false)
-  const { updateModules, createNewProject, project } = useProjectStore()
+  const { updateModules, createNewProject, project, setTimeConfig } = useProjectStore()
 
   const handleImportCSV = async () => {
     if (!window.electronAPI) {
@@ -74,8 +74,14 @@ export function useCSVImport() {
         if (!project) {
           createNewProject()
         }
-        
-        // Update modules
+
+        // Apply the scale/precision carried by the file before the rows are
+        // scheduled, so canonical ms values snap to the right quantum.
+        if (result.timeConfig) {
+          setTimeConfig(result.timeConfig)
+        }
+
+        // Update modules (triggers the full dependency recompute)
         updateModules(result.data)
         
         toast({

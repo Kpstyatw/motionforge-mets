@@ -11,7 +11,9 @@
         "title": "エクスポート",
         "csv": "CSVとしてエクスポート",
         "pdf": "PDFとしてエクスポート",
-        "mp4": "MP4としてエクスポート"
+        "mp4": "MP4としてエクスポート",
+        "excel": "Excel ガント表",
+        "grid": "拍グリッド（従来ビュー）"
       },
       "quit": "終了"
     },
@@ -104,7 +106,10 @@
   "dialog": {
     "confirm": "確認",
     "cancel": "キャンセル",
-    "ok": "OK"
+    "ok": "OK",
+    "add": "追加",
+    "apply": "適用",
+    "close": "閉じる"
   },
   "error": {
     "fileNotFound": "ファイルが見つかりません",
@@ -203,6 +208,9 @@
       "unsupported": "このシステムでは H.264 エンコードが利用できないため、MP4 出力は無効です",
       "rendering": "動画を描画中",
       "cancel": "エクスポートを中止"
+    },
+    "excel": {
+      "description": "タイミング表 + ガント行列 + 設定/依存。セルサイズをカスタマイズでき、再インポートも可能。"
     }
   },
   "help": {
@@ -301,5 +309,112 @@
     "banner": "この動きを提案書に入れたいですか？デスクトップ版なら追従再生の MP4 と PDF レポートを書き出せます。",
     "sharedFooter": "このチャートは DYNMECH CycleView から共有されました。編集やエクスポートにはデスクトップ版をダウンロードしてください。",
     "dismiss": "閉じる"
+  },
+  "gantt": {
+    "title": "動作タイミング ガント図",
+    "total": "総サイクル",
+    "scale": "目盛",
+    "precision": "精度",
+    "timeSettings": "時間目盛",
+    "excel": "Excel 変換",
+    "expandAll": "すべて展開",
+    "collapseAll": "すべて折りたたむ",
+    "hideSubActions": "すべての子動作を隠す",
+    "hidden": "行を非表示",
+    "addChild": "子を追加",
+    "addModule": "モジュール追加",
+    "addNode": "階層ノード追加",
+    "hierarchy": "モジュール / 機構 / 動作 / 子動作",
+    "hierarchyPanel": "階層と操作",
+    "startEnd": "開始–終了 (ms)",
+    "zoomIn": "拡大",
+    "zoomOut": "縮小",
+    "fit": "ウィンドウに合わせる",
+    "visibleCount": "表示行",
+    "taskCount": "ノード数",
+    "sideHint": "クリックで選択、ダブルクリックで編集。矢印は依存チェーンです。",
+    "editSelected": "選択を編集",
+    "kind": {
+      "module": "モジュール",
+      "mechanism": "機構",
+      "action": "動作",
+      "subaction": "子動作"
+    },
+    "newKind": {
+      "module": "新モジュール",
+      "mechanism": "新機構",
+      "action": "新動作",
+      "subaction": "新子動作"
+    },
+    "taskEditor": "タスク編集",
+    "name": "名前",
+    "stage": "段階",
+    "mechanism": "所属機構 / モジュール",
+    "timing": "タイミング（整数 ms）",
+    "start": "開始 (ms)",
+    "duration": "所要時間 (ms)",
+    "end": "終了 (ms)",
+    "timeHint": "1234 / 1234ms / 1.234s / 01:23.456 に対応。先行タスクを変更すると全ての後続タスクの開始が連鎖再計算されます。",
+    "summaryHint": "集計行：開始・終了は全子孫から自動集計され、直接編集できません。",
+    "startMode": "開始モード",
+    "auto": "依存に従う（自動）",
+    "manual": "開始を固定（依存より早くならない）",
+    "constraint": "依存による最も早い開始",
+    "clamped": "依存により繰り下げ",
+    "invalidTime": "時刻形式が不正",
+    "predecessors": "先行タスク",
+    "selectPred": "先行タスクを選択",
+    "add": "追加",
+    "remove": "削除",
+    "noPreds": "先行タスクはありません。開始はこのタスク自身で決まります。",
+    "summaryNoDeps": "集計行には先行タスクを設定できません。動作または子動作に設定してください。",
+    "successors": "後続タスク",
+    "noCandidate": "追加できる先行タスクがありません",
+    "cycleBlocked": "依存の循環になります",
+    "level": "第",
+    "levelUnit": "階層",
+    "children": "直接の子",
+    "path": "子動作の下にさらに子動作を追加できます",
+    "deleteTask": "タスクを削除（子動作を含む）",
+    "confirmDelete": "このタスクと全ての子動作・関連依存を削除しますか？",
+    "nodeKind": "ノード種別",
+    "nestHint": "子動作は別の子動作の親にでき、階層の深さに制限はありません。",
+    "parent": "親",
+    "rootHint": "最上位モジュールを作成します"
+  },
+  "timeScale": {
+    "title": "時間目盛と精度",
+    "scale": "時間目盛 (ms/目盛)",
+    "precision": "時間精度 (ms)",
+    "scaleHint": "目盛は 1 ms まで設定可能。計算はすべて整数ミリ秒で行います。",
+    "precisionHint": "最小 1 ms。すべての時刻はこの精度の整数倍に丸められます。",
+    "unit": "目盛の表示単位",
+    "gantt": "ガントビュー",
+    "rowHeight": "行の高さ (px)",
+    "showDeps": "依存線を表示",
+    "showSummaries": "親の集計ブラケットを表示",
+    "note": "目盛・精度を変更すると依存エンジンが再量子化し全後続タスクを連鎖再計算します。ガント図・拍グリッド・PDF・MP4・Excel は同じ新値を参照します。"
+  },
+  "excel": {
+    "title": "ガント図 ⇄ Excel 変換",
+    "intro": "シート1 は正確な ms 表、シート2 は時間列に展開したガント行列、シート3 は設定・階層・依存を保存し再インポートできます。",
+    "matrixStep": "行列の列幅",
+    "cellSize": "セルサイズ（カスタマイズ可）",
+    "rowHeight": "行の高さ (pt)",
+    "headerHeight": "ヘッダー高さ (pt)",
+    "fontSize": "フォントサイズ (pt)",
+    "matrixCellWidth": "行列の列幅 (文字)",
+    "matrixRowHeight": "行列の行高さ (pt)",
+    "columnWidths": "各列の幅 (文字)",
+    "includeHidden": "折りたたんで非表示の子動作も出力",
+    "export": "Excel を書き出す",
+    "import": "Excel を読み込む（ガントへ反映）",
+    "verify": "整合性を検証",
+    "verified": "{{count}} 行を検証しました。図表と表のデータは一致し、矛盾はありません。",
+    "issues": "件の不一致",
+    "exportFailed": "Excel 書き出し失敗",
+    "importFailed": "Excel 読み込み失敗",
+    "imported": "{{count}} 行を読み込み依存から再スケジュール済み。ガント図と表は同期しています。",
+    "importOk": "Excel を読み込みました"
   }
 }

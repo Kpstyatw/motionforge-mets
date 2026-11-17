@@ -41,6 +41,15 @@ export function useCycleView() {
     [expandedModules, config.scaleMs, config.precisionMs, config.displayUnit]
   )
 
+  // Multi-cycle view keeps ONE row per template task and draws every cycle as
+  // a separate bar on that row along the time axis. Row order/hierarchy must
+  // therefore come from a schedule of the unprojected template, while bar
+  // geometry still comes from the expanded schedule above.
+  const templateSchedule = useMemo(
+    () => (expansion.expanded ? computeSchedule(modules ?? [], config) : schedule),
+    [expansion.expanded, modules, config, schedule]
+  )
+
   const resourceSchedule = useMemo(
     () => computeResourceSchedule(schedule, expandedAllocations, resources ?? []),
     [schedule, expandedAllocations, resources]
@@ -53,6 +62,7 @@ export function useCycleView() {
     config,
     expansion,
     schedule,
+    templateSchedule,
     resourceSchedule,
     totalMs,
     expanded: expansion.expanded,

@@ -8,7 +8,7 @@ import {
 } from '@/lib/dependencyEngine'
 import { useCycleView } from '@/hooks/useCycleView'
 import {
-  templateIdOf, normalizeCycleConfig
+  templateIdOf, cycleIndexOf, normalizeCycleConfig
 } from '@/lib/cycleEngine'
 import { formatTime, rulerTicks } from '@/lib/timeScale'
 import { CycleDialog } from './CycleDialog'
@@ -66,7 +66,7 @@ export const GanttView: React.FC<GanttViewProps> = ({
   const [groupBy, setGroupBy] = useState<GroupBy>('flow')
   const [cycleDialogOpen, setCycleDialogOpen] = useState(false)
 
-  const { config, expansion, schedule, resourceSchedule, totalMs } = useCycleView()
+  const { config, expansion, schedule, templateSchedule, resourceSchedule, totalMs } = useCycleView()
   const expanded = expansion.expanded
   const cycleCfg = normalizeCycleConfig(expansion.config)
   const gantt = project?.ganttConfig
@@ -75,24 +75,22 @@ export const GanttView: React.FC<GanttViewProps> = ({
   const showDependencies = gantt?.showDependencies ?? true
   const showSummaries = gantt?.showSummaries ?? true
 
-  // Collapsing a template row hides every projected instance of that row.
-  const collapsed = useMemo(() => {
-    const ids = new Set(collapsedTaskIds)
-    if (expanded) {
-      collapsedTaskIds.forEach(id => (expansion.templateToInstances[id] ?? []).forEach(i => ids.add(i)))
-    }
-    return ids
-  }, [collapsedTaskIds, expanded, expansion.templateToInstances])
-  const rows = useMemo(() => flattenTree(schedule, collapsed), [schedule, collapsed])
-  const hiddenCount = schedule.tasks.length - rows.length
+  // Cycles extend the TIME axis, not the row list: rows always follow the
+  // template hierarchy exactly once, and each row draws one bar per cycle.
+  const rowSchedule = expanded ? templateSchedule : schedule
+  const rows = useMemo(
+    () => flattenTree(rowSchedule, new Set(collapsedTaskIds)),
+    [rowSchedule, collapsedTaskIds]
+  )
+  const hiddenCount = rowSchedule.tasks.length - rows.length
 
   const chain = useMemo(() => {
-    if (!selectedTaskId || !schedule.byId[selectedTaskId]) return null
+    if (!selectedTaskId || !rowSchedule.byId[selectedTaskId]) return null
     const set = new Set<string>([selectedTaskId])
-    collectPredecessorIds(schedule, selectedTaskId).forEach(id => set.add(id))
-    collectSuccessorIds(schedule, selectedTaskId).forEach(id => set.add(id))
+    collectPredecessorIds(rowSchedule, selectedTaskId).forEach(id => set.add(id))
+    collectSuccessorIds(rowSchedule, selectedTaskId).forEach(id => set.add(id))
     return set
-  }, [schedule, selectedTaskId])
+  }, [rowSchedule, selectedTaskId])
 
   const chartWidth = Math.max(700, (totalMs + config.scaleMs * 3) * pxPerMs + 60)
   const bodyHeight = Math.max(240, rows.length * rowHeight + 60)
@@ -117,14 +115,18 @@ export const GanttView: React.FC<GanttViewProps> = ({
   const linkPaths = useMemo(() => {
     if (!showDependencies) return []
     const paths: Array<{ d: string; id: string; from: string; to: string; text: string }> = []
-    rows.forEach(({ task }) => {
+    // Walk the timed instances (one per cycle) but resolve both ends back to
+    // template rows, so arrows land on the correct Y when cycles share a row.
+    schedule.tasks.forEach(task => {
       if (task.isSummary) return
-      const toRow = rowIndex.get(task.id)
+      const toId = templateIdOf(task.id)
+      const toRow = rowIndex.get(toId)
       if (toRow === undefined) return
       ;(task.module.predecessors ?? []).forEach(dep => {
         const pred = schedule.byId[dep.fromId]
-        const fromRow = rowIndex.get(dep.fromId)
-        if (!pred || fromRow === undefined || !visibleIds.has(dep.fromId)) return
+        const fromId = templateIdOf(dep.fromId)
+        const fromRow = rowIndex.get(fromId)
+        if (!pred || fromRow === undefined || !visibleIds.has(fromId)) return
         const startFromEnd = dep.type === 'FS' || dep.type === 'FF'
         const endAtFinish = dep.type === 'FF' || dep.type === 'SF'
         const x1 = (startFromEnd ? pred.endMs : pred.startMs) * pxPerMs
@@ -134,13 +136,13 @@ export const GanttView: React.FC<GanttViewProps> = ({
         const elbow = Math.max(x1 + 10, x2 - 14)
         const d = `M ${x1} ${y1} L ${elbow} ${y1} L ${elbow} ${y2} L ${x2} ${y2}`
         paths.push({
-          d, id: dep.id, from: dep.fromId, to: task.id,
+          d, id: dep.id, from: fromId, to: toId,
           text: `${pred.code} → ${task.code} (${dep.type} ${dep.lagMs >= 0 ? '+' : ''}${dep.lagMs}ms)`
         })
       })
     })
     return paths
-  }, [rows, rowIndex, schedule, pxPerMs, showDependencies, rowHeight, visibleIds])
+  }, [rowIndex, schedule, pxPerMs, showDependencies, rowHeight, visibleIds])
 
   return (
     <div className="h-full flex flex-col min-h-0 bg-background">
@@ -215,7 +217,7 @@ export const GanttView: React.FC<GanttViewProps> = ({
             {t('gantt.expandAll', { defaultValue: '全部展开' })}
           </button>
           <button
-            onClick={() => collapseAllSubActions(schedule.tasks
+            onClick={() => collapseAllSubActions(rowSchedule.tasks
               .filter(x => (x.kind === 'action' || x.kind === 'subaction') && x.childIds.length > 0)
               .map(x => x.id))}
             className="px-2 py-1 border rounded hover:bg-accent"
@@ -223,7 +225,7 @@ export const GanttView: React.FC<GanttViewProps> = ({
             {t('gantt.hideSubActions', { defaultValue: '隐藏所有子动作' })}
           </button>
           <button
-            onClick={() => useUIStore.getState().setCollapsedTasks(schedule.tasks.filter(x => x.childIds.length > 0).map(x => x.id))}
+            onClick={() => useUIStore.getState().setCollapsedTasks(rowSchedule.tasks.filter(x => x.childIds.length > 0).map(x => x.id))}
             className="px-2 py-1 border rounded hover:bg-accent"
           >
             {t('gantt.collapseAll', { defaultValue: '全部折叠' })}
@@ -264,7 +266,9 @@ export const GanttView: React.FC<GanttViewProps> = ({
             <div className="flex items-center justify-between px-3 border-b bg-muted/60 font-medium text-xs"
               style={{ height: HEADER_HEIGHT }}>
               <span>{t('gantt.hierarchy', { defaultValue: '模块 / 机构 / 动作 / 子动作' })}</span>
-              <span className="text-muted-foreground">{t('gantt.startEnd', { defaultValue: '起止 (ms)' })}</span>
+              <span className="text-muted-foreground">
+                {t('gantt.startEnd', { defaultValue: '起止 (ms)' })}{expanded ? ` ×${cycleCfg.repeats}` : ''}
+              </span>
             </div>
             {rows.map((row, i) => (
               <GanttLabelRow
@@ -352,22 +356,34 @@ export const GanttView: React.FC<GanttViewProps> = ({
                 )
               })}
 
-              {/* bars / summary brackets */}
-              {rows.map(({ task }, i) => {
-                const y = barY(i)
-                const x = task.startMs * pxPerMs
-                const w = Math.max(1, task.durationMs * pxPerMs)
-                const dimmed = Boolean(chain && !chain.has(task.id))
-                const color = task.module.color || '#3b82f6'
-                const isHover = hovered === task.id
-                const taskConflicts = resourceSchedule.conflicts.filter(c => c.a.task.id === task.id || c.b.task.id === task.id)
-                return (
-                  <g key={task.id} opacity={dimmed ? 0.28 : 1}
+              {/* bars / summary brackets — one bar per cycle on each template row */}
+              {rows.map(({ task: rowTask }, i) =>
+                (expansion.templateToInstances[rowTask.id] ?? [rowTask.id]).map(instanceId => {
+                  const task = schedule.byId[instanceId]
+                  if (!task) return null
+                  const y = barY(i)
+                  const x = task.startMs * pxPerMs
+                  const w = Math.max(1, task.durationMs * pxPerMs)
+                  const cycle = cycleIndexOf(task.id)
+                  const dimmed = Boolean(chain && !chain.has(rowTask.id))
+                  const color = task.module.color || '#3b82f6'
+                  const isHover = hovered === task.id
+                  const selected = selectedTaskId === rowTask.id
+                  const desc = task.module.actionDescription
+                  const maxChars = Math.max(4, Math.floor((w - (expanded && cycle > 1 ? 16 : 0)) / 8))
+                  const shortDesc = desc.length > maxChars ? `${desc.slice(0, maxChars)}…` : desc
+                  const barText = expanded && cycle > 1
+                    ? (w > 60 ? `C${cycle}·${shortDesc}` : `C${cycle}`)
+                    : shortDesc
+                  const showText = w > (expanded && cycle > 1 ? 22 : 52)
+                  const taskConflicts = resourceSchedule.conflicts.filter(c => c.a.task.id === task.id || c.b.task.id === task.id)
+                  return (
+                  <g key={task.id} data-task-id={task.id} opacity={dimmed ? (expanded && cycle > 1 ? 0.5 : 0.28) : 1}
                     onMouseEnter={() => setHovered(task.id)}
-                    onClick={() => setSelectedTask(task.id)}
-                    onDoubleClick={() => onEditTask(templateIdOf(task.id))}
+                    onClick={() => setSelectedTask(rowTask.id)}
+                    onDoubleClick={() => onEditTask(rowTask.id)}
                     style={{ cursor: 'pointer' }}>
-                    <title>{`${task.code} ${task.module.actionDescription}\n${task.startMs} → ${task.endMs} ms (${task.durationMs} ms)${taskConflicts.length ? `\n⚠ ${taskConflicts.length} ${t('resource.conflicts', { defaultValue: '处资源冲突' })}: ${taskConflicts.map(c => c.resourceName).join(', ')}` : ''}`}</title>
+                    <title>{`${task.code} ${desc}\n${task.startMs} → ${task.endMs} ms (${task.durationMs} ms)${expanded ? `\n周期 C${cycle} / ${cycleCfg.repeats}` : ''}${taskConflicts.length ? `\n⚠ ${taskConflicts.length} ${t('resource.conflicts', { defaultValue: '处资源冲突' })}: ${taskConflicts.map(c => c.resourceName).join(', ')}` : ''}`}</title>
                     {task.isSummary ? (
                       <>
                         <rect x={x} y={y + barH * 0.28} width={w} height={barH * 0.44}
@@ -378,15 +394,13 @@ export const GanttView: React.FC<GanttViewProps> = ({
                     ) : (
                       <>
                         <rect x={x} y={y} width={w} height={barH} rx={3}
-                          fill={color} fillOpacity={isHover ? 0.95 : 0.8}
-                          stroke={selectedTaskId === task.id ? '#ffffff' : color}
-                          strokeWidth={selectedTaskId === task.id ? 2 : 1} />
-                        {w > 52 && (
+                          fill={color} fillOpacity={isHover ? 0.95 : (expanded && cycle > 1 ? 0.62 : 0.8)}
+                          stroke={selected ? '#ffffff' : color}
+                          strokeWidth={selected ? 2 : 1} />
+                        {showText && (
                           <text x={x + 6} y={y + barH / 2 + 4} fontSize={10} fill="#ffffff"
                             style={{ pointerEvents: 'none' }}>
-                            {task.module.actionDescription.length > Math.max(4, Math.floor(w / 8))
-                              ? `${task.module.actionDescription.slice(0, Math.max(4, Math.floor(w / 8)))}…`
-                              : task.module.actionDescription}
+                            {barText}
                           </text>
                         )}
                       </>
@@ -413,8 +427,9 @@ export const GanttView: React.FC<GanttViewProps> = ({
                       </>
                     )}
                   </g>
-                )
-              })}
+                  )
+                })
+              )}
 
               {/* playhead */}
               {currentFrame > 0 && currentFrame <= totalMs && (

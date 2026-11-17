@@ -18,7 +18,7 @@
 | 层级 模块→机构→动作→子动作，子动作可无限嵌套、可折叠 | `TaskKind` 四类型 + `parentId` 树；`flattenTree(schedule, collapsedIds)` 支持逐节点/全部折叠隐藏 |
 | 流程视角 vs 资源视角的平衡 | `resources` 全局唯一 + `allocations` 精确窗口（相对动作的多对多关系）；甘特视图「流程/资源」切换只换分组不改数据 |
 | 资源占用冲突提示 | `resourceScheduler.detectConflicts` 按资源检测精确窗口重叠，泳道红标 + 流程角标 + 点击跳转；**只提示不自动改时序** |
-| 固定周期重复动作，单/多周期都能展示 | `CycleConfig` + `cycleEngine.expandCycles`：底层只存一份模板；单周期直接编辑模板，多周期按 `cycleMs × repeats` 投影只读实例；甘特工具栏一键切换，周期分隔线、实例编号、超周期提示；编辑实例自动回写模板 |
+| 固定周期重复动作，单/多周期都能展示 | `CycleConfig` + `cycleEngine.expandCycles`：底层只存一份模板；单周期直接编辑模板，多周期按 `cycleMs × repeats` 投影只读实例；甘特工具栏一键切换，周期在时间轴横向延伸（不追加重复行）、周期分隔线与 C 编号、超周期提示；编辑任一周期回写模板 |
 
 ### 依赖语义
 支持四种依赖类型 `FS / SS / FF / SF` 与整数毫秒延迟 `lagMs`：
@@ -81,7 +81,7 @@ interface CycleConfig { enabled: boolean; cycleMs: number; repeats: number }
 - `collapseCycleProjection()`：把工作簿里的 `@Cn` 行折叠回一份模板，Excel 导入后按 `cycleConfig` 重新展开。
 - 超周期检测：模板任务 `endMs > cycleMs` 时给出警告；跨周期资源重叠由既有 `resourceScheduler` 在展开实例上直接检出（首尾相接不算冲突）。
 
-**视图边界**：多周期投影用于甘特图、资源泳道与 Excel（工作簿导出当前可见周期，导入折叠回模板）；经典节拍网格、PDF 与 MP4 仍按单周期模板输出，避免把 N 倍行塞进动画。
+**甘特视图布局**：多周期只扩展**时间轴**，不追加行。行始终按模板层级出现一次（`useCycleView.templateSchedule` → `flattenTree`），每个模板行再用 `templateToInstances` 取出 C1…Cn 实例，各自按绝对时刻画成同一行上的横向条形；依赖箭头、汇总括号、冲突角标同样以实例为数据源、以模板行为 Y 坐标。C2 及以后的条形略淡并带 `C2·` 前缀。资源泳道与 Excel 仍按实例逐条列出（导入折叠回模板）；经典节拍网格、PDF 与 MP4 仍按单周期模板输出，避免把 N 倍行塞进动画。
 
 ### 2.2 资源占用层（流程视角 vs 资源视角的平衡）
 
@@ -117,7 +117,7 @@ interface ResourceAllocation {                                      // 多对多
 | `src/lib/excelModel.ts` | 纯数据层（无 ExcelJS）：Excel 行构造 `buildExcelRows`、列定义、矩阵跨度 `matrixStep`、文件名 |
 | `src/services/excelService.ts` | ExcelJS 工作簿读写的**按需加载**模块：`buildGanttWorkbook` / `importGanttWorkbook` |
 | `src/lib/cycleEngine.ts` | **固定周期投影**：`normalizeCycleConfig` / `expandCycles` / `collapseCycleProjection` / 实例↔模板 id 映射 / 超周期检测；单周期是 `repeats=1` 的退化路径 |
-| `src/hooks/useCycleView.ts` | 甘特 / 资源 / Excel 共用的派生视图：展开模板 → 排程 → 资源窗口，三处数据不可能不一致 |
+| `src/hooks/useCycleView.ts` | 甘特 / 资源 / Excel 共用的派生视图：展开模板 → 排程 → 资源窗口，三处数据不可能不一致；额外提供 `templateSchedule` 供多周期甘特按模板行渲染 |
 | `src/components/CycleDialog.tsx` | 周期时长/周期数设置、常用周期预设、超周期提示 |
 | `src/components/GanttView.tsx` | SVG 甘特图：四层级树行、时间刻度、依赖箭头、汇总括号、缩放/折叠、双击编辑；流程/资源分组切换、资源冲突角标；**单/多周期切换、周期分隔线、实例 C 标记、编辑回写模板** |
 | `src/components/ResourceLanes.tsx` | 资源泳道视图：每条资源一行、精确占用块、重叠红标（含跨周期重叠）、点击跳回流程动作 |
@@ -165,7 +165,7 @@ interface ResourceAllocation {                                      // 多对多
 - **级联重算**：任何 `setTaskTiming`（开始/时长/结束）、`addPredecessor` 等操作提交后，`commit()` 调用依赖引擎重排全部任务并写回；后置起始自动同步，环或悬空依赖在界面给出警告。
 - **Excel 往返**：ExcelDialog 中自定义行高/列宽/字号/矩阵跨度后导出五工作表工作簿；导入时按依赖重新排程并写回项目（含资源与占用）；「校验一致性」逐行检查 `开始+持续=结束` 与依赖约束并给出报告。
 - **流程 / 资源双视图**：甘特工具栏的「流程 / 资源」切换只改变分组维度，不改数据。流程视图看完整时序链，资源视图看各机构/电机的占用与冲突；任务编辑框的「资源占用」入口以精确偏移+时长声明占用，窗口随依赖级联自动跟随。冲突只以红标提示，不自动改时序（后续可加自动消解开关）。
-- **单周期 / 多周期**：工具栏「单周期 / 多周期」一键切换 + 齿轮设置周期时长与数量。单周期直接编辑模板；多周期按固定周期投影只读实例，画紫色周期分隔线与 C1/C2 编号。双击任一实例编辑的是模板，全部周期同步。跨周期资源重叠在资源泳道标红。
+- **单周期 / 多周期**：工具栏「单周期 / 多周期」一键切换 + 齿轮设置周期时长与数量。单周期直接编辑模板；多周期在**同一行的时间轴上向右延伸**出各周期条形（不再向下追加重复行），画紫色周期分隔线与 C1/C2 编号，表头「起止 (ms) ×N」提示每行含 N 个周期。双击任一周期的条形编辑的都是模板，全部周期同步。跨周期资源重叠在资源泳道标红。
 
 ---
 

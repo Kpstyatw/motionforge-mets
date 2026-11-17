@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ResourceSchedule, resourceBusyMs } from '@/lib/resourceScheduler'
+import { templateIdOf } from '@/lib/cycleEngine'
 import { formatTime } from '@/lib/timeScale'
 import { TimeConfig } from '@/types'
 import { Plus, AlertTriangle } from 'lucide-react'
@@ -109,11 +110,11 @@ export const ResourceLanes: React.FC<ResourceLanesProps> = ({
                   const x = a.startMs * pxPerMs
                   const w = Math.max(1, (a.endMs - a.startMs) * pxPerMs)
                   const inConflict = lane.conflicts.some(c => c.a.allocation.id === a.allocation.id || c.b.allocation.id === a.allocation.id)
-                  const selected = selectedTaskId === a.task.id
+                  const selected = selectedTaskId !== null && templateIdOf(selectedTaskId) === templateIdOf(a.task.id)
                   return (
                     <g key={a.allocation.id} style={{ cursor: 'pointer' }}
-                      onClick={() => onSelectTask(a.task.id)}
-                      onDoubleClick={() => onJumpToFlow(a.task.id)}>
+                      onClick={() => onSelectTask(templateIdOf(a.task.id))}
+                      onDoubleClick={() => onJumpToFlow(templateIdOf(a.task.id))}>
                       <title>{`${lane.resource.name} ← ${a.task.code} ${a.task.module.actionDescription}\n${a.startMs} → ${a.endMs} ms\n双击跳转到流程视图`}</title>
                       <rect x={x} y={y} width={w} height={barH} rx={3}
                         fill={inConflict ? '#ef4444' : color}
@@ -139,7 +140,7 @@ export const ResourceLanes: React.FC<ResourceLanesProps> = ({
                 const y = barY(laneIndex) - 3
                 const w = Math.max(2, x2 - x1)
                 return (
-                  <g key={`c${c.id}`} style={{ cursor: 'pointer' }} onClick={() => onJumpToFlow(c.b.task.id)}>
+                  <g key={`c${c.id}`} style={{ cursor: 'pointer' }} onClick={() => onJumpToFlow(templateIdOf(c.b.task.id))}>
                     <title>{`⚠ ${c.resourceName} 冲突 ${c.overlapMs}ms\n${c.a.task.code} × ${c.b.task.code}\n${c.overlapStartMs} → ${c.overlapEndMs} ms\n点击跳转到流程视图`}</title>
                     <rect x={x1} y={y} width={w} height={barH + 6} fill="none" stroke="#ef4444" strokeWidth={2} rx={2} />
                     <line x1={x1} y1={y} x2={x2} y2={y + barH + 6} stroke="#ef4444" strokeWidth={1} />

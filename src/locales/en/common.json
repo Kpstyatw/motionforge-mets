@@ -399,7 +399,9 @@
     "rowHeight": "Row height (px)",
     "showDeps": "Show dependency arrows",
     "showSummaries": "Show parent summary brackets",
-    "note": "Changing scale/precision re-quantises and cascades every successor start; Gantt, beat grid, PDF, MP4 and Excel all read the new values."
+    "note": "Changing scale/precision re-quantises and cascades every successor start; Gantt, beat grid, PDF, MP4 and Excel all read the new values.",
+    "cellWidth": "Cell width (px/division)",
+    "cellWidthHint": "Pixels per scale division; larger stretches the time axis, same as toolbar zoom."
   },
   "excel": {
     "title": "Gantt ⇄ Excel conversion",

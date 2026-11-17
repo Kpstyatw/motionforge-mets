@@ -19,9 +19,13 @@ export const TimeScaleDialog: React.FC<TimeScaleDialogProps> = ({ isOpen, onClos
   const [precisionMs, setPrecisionMs] = useState('1')
   const [displayUnit, setDisplayUnit] = useState<TimeConfig['displayUnit']>('ms')
   const [rowHeight, setRowHeight] = useState('34')
+  const [cellWidth, setCellWidth] = useState('35')
   const [showDependencies, setShowDependencies] = useState(true)
   const [showSummaries, setShowSummaries] = useState(true)
 
+  // Snapshot config only when the dialog opens. Depending on project config
+  // here would overwrite in-progress edits whenever the store changes (e.g.
+  // toolbar zoom), which is why "apply" looked like it did nothing.
   useEffect(() => {
     if (!isOpen || !project) return
     const cfg = normalizeTimeConfig(project.timeConfig)
@@ -29,9 +33,11 @@ export const TimeScaleDialog: React.FC<TimeScaleDialogProps> = ({ isOpen, onClos
     setPrecisionMs(String(cfg.precisionMs))
     setDisplayUnit(cfg.displayUnit)
     setRowHeight(String(project.ganttConfig?.rowHeight ?? 34))
+    setCellWidth(String(Math.round((project.ganttConfig?.pxPerMs ?? 0.35) * cfg.scaleMs * 100) / 100))
     setShowDependencies(project.ganttConfig?.showDependencies ?? true)
     setShowSummaries(project.ganttConfig?.showSummaries ?? true)
-  }, [isOpen, project?.timeConfig, project?.ganttConfig])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen])
 
   if (!isOpen || !project) return null
 
@@ -41,6 +47,8 @@ export const TimeScaleDialog: React.FC<TimeScaleDialogProps> = ({ isOpen, onClos
     setTimeConfig({ scaleMs: scale, precisionMs: precision, displayUnit })
     setGanttConfig({
       rowHeight: Math.max(18, Math.min(80, Math.round(Number(rowHeight) || 34))),
+      // pixels per scale division → px/ms
+      pxPerMs: Math.min(8, Math.max(0.004, (Number(cellWidth) || 35) / scale)),
       showDependencies,
       showSummaries
     })
@@ -95,6 +103,14 @@ export const TimeScaleDialog: React.FC<TimeScaleDialogProps> = ({ isOpen, onClos
               <label className={labelClass}>{t('timeScale.rowHeight', { defaultValue: '行高 (px)' })}</label>
               <input className={inputClass} type="number" min={18} max={80} value={rowHeight}
                 onChange={e => setRowHeight(e.target.value)} />
+            </div>
+            <div>
+              <label className={labelClass}>{t('timeScale.cellWidth', { defaultValue: '时间格宽 (px/格)' })}</label>
+              <input className={inputClass} type="number" min={4} max={400} step={1} value={cellWidth}
+                onChange={e => setCellWidth(e.target.value)} />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {t('timeScale.cellWidthHint', { defaultValue: '每格时间刻度占多少像素；调大即横向放大时间轴，与工具栏缩放等效。' })}
+              </p>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={showDependencies} onChange={e => setShowDependencies(e.target.checked)} />

@@ -125,7 +125,7 @@ interface ResourceAllocation {                                      // 多对多
 | `src/components/ResourceAllocationDialog.tsx` | 单动作的资源占用编辑：精确偏移/时长、钳制到动作时长内、快速新建资源 |
 | `src/components/GanttSidePanel.tsx` | 左侧层级面板：树选择、增删节点、折叠控制 |
 | `src/components/TaskEditorDialog.tsx` | 任务编辑：时序（支持 `1234 / 1234ms / 1.234s / 01:23.456`）、起始方式、前置/后置任务增删改、循环拦截；**资源占用入口** |
-| `src/components/TimeScaleDialog.tsx` | 时间刻度/精度、行高、依赖线、汇总括号配置 |
+| `src/components/TimeScaleDialog.tsx` | 时间刻度/精度、行高、**时间格宽**、依赖线、汇总括号配置；格宽写入 `ganttConfig.pxPerMs`（= 格宽 ÷ 刻度），只在对话框打开时快照配置，避免编辑中被外部更新覆盖 |
 | `src/hooks/useCSVImport.ts` | **统一文件导入入口**：按扩展名路由 `.csv` → CSV 导入 / `.xlsx/.xlsm` → 五工作表 Excel 导入；两种格式都能在无项目时创建项目，桌面走原生对话框、Web 走 `<input accept=".csv,.xlsx,.xlsm">`；ExcelJS 动态加载。**Electron 下 Excel 走 `readFileBinary` base64 字节通道**，避免 UTF-8 解码破坏 zip（`src/lib/binary.ts` 负责还原） |
 | `src/components/AddNodeDialog.tsx` | 新增模块/机构/动作/子动作节点 |
 | `src/lib/cycleEngine.test.ts` | 7 项单测：单周期退化、N 周期展开与平移、层级/依赖继承、资源窗口继承、折叠回模板、超周期告警、**跨周期冲突检出** |
@@ -160,6 +160,7 @@ interface ResourceAllocation {                                      // 多对多
 ## 4. 交互实现
 
 - **视图切换**：工具栏按钮在「层级甘特图」与「原有节拍网格」间切换；两者共享同一份 `computeSchedule` 结果。
+- **尺寸可调**：「时间刻度」对话框除刻度/精度/行高外，还可设「时间格宽」（每格时间刻度的像素数，4–400 px，换算为 `pxPerMs` = 格宽 ÷ 刻度，与工具栏缩放等效），随项目持久化。左侧第一列是模块/机构层级信息列，宽度固定、不随时间格变化。
 - **层级操作**：侧栏树单击选中、双击编辑；每个节点可「新增下级」（子动作的下级仍是子动作，层数不限）；逐节点折叠箭头 + 全部展开/折叠 + 隐藏所有子动作。汇总行（模块/机构）起止时间由后代自动卷算，不可直接编辑、不可挂前置任务。
 - **依赖编辑**：任务编辑器「前置任务」区可新增（下拉选择候选任务 + 类型 + 延迟）、修改、删除；`wouldCreateCycle` 实时拦截会形成环的选择；甘特图以箭头展示依赖，点击可选中相关任务。
 - **级联重算**：任何 `setTaskTiming`（开始/时长/结束）、`addPredecessor` 等操作提交后，`commit()` 调用依赖引擎重排全部任务并写回；后置起始自动同步，环或悬空依赖在界面给出警告。

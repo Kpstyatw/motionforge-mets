@@ -76,4 +76,20 @@ describe('Gantt multi-cycle layout', () => {
     ])
     expect(html).toContain('×3')
   })
+
+  it('time-cell width (pxPerMs) drives the drawn bar width', () => {
+    load({ enabled: false, cycleMs: 1000, repeats: 3 })
+    const barWidth = (html: string) => {
+      const seg = html.slice(html.indexOf('data-task-id="A1"'))
+      const m = seg.match(/<rect[^>]*?\swidth="([\d.]+)"/)
+      return Number(m?.[1] ?? 0)
+    }
+    useProjectStore.getState().setGanttConfig({ pxPerMs: 0.35 })
+    const narrow = barWidth(renderToStaticMarkup(React.createElement(GanttView, props)))
+    // Dialog "apply" writes cellWidth/scale = 70/100 = 0.7 px/ms.
+    useProjectStore.getState().setGanttConfig({ pxPerMs: 0.7 })
+    const wide = barWidth(renderToStaticMarkup(React.createElement(GanttView, props)))
+    expect(narrow).toBe(35)
+    expect(wide).toBe(70)
+  })
 })

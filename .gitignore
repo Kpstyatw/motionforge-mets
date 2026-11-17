@@ -10,7 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-electron
-release
+release*/
 *.local
 
 # Editor directories and files
@@ -48,3 +48,14 @@ Thumbs.db
 # Test files
 test-data.csv
 dist-web
+
+# Electron build artifacts / packaging intermediates
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.tar.gz
+builder-debug.yml
+win-unpacked/

@@ -31,6 +31,8 @@ import { TaskEditorDialog } from '@/components/TaskEditorDialog'
 import { TimeScaleDialog } from '@/components/TimeScaleDialog'
 import { ExcelDialog } from '@/components/ExcelDialog'
 import { AddNodeDialog } from '@/components/AddNodeDialog'
+import { ResourceManagerDialog } from '@/components/ResourceManagerDialog'
+import { ResourceAllocationDialog } from '@/components/ResourceAllocationDialog'
 import { IS_ONLINE, ONLINE_DISABLED_COMMANDS } from '@/lib/platform'
 import { readSharedCsv } from '@/lib/shareLink'
 import {
@@ -43,7 +45,7 @@ import {
 
 function App() {
   const { t } = useTranslation()
-  const { handleImportCSV, importCSVText, isImporting } = useCSVImport()
+  const { handleImport, importCSVText, isImporting } = useCSVImport()
   // Online edition: opened from a share link (shows the footer prompt).
   const [sharedMode, setSharedMode] = useState(false)
   const { project, createNewProject, updateModules } = useProjectStore()
@@ -80,11 +82,14 @@ function App() {
   const [speedSettingsOpen, setSpeedSettingsOpen] = useState(false)
   const [timeScaleOpen, setTimeScaleOpen] = useState(false)
   const [excelOpen, setExcelOpen] = useState(false)
+  const [resourceManagerOpen, setResourceManagerOpen] = useState(false)
+  const [allocationTaskId, setAllocationTaskId] = useState<string | null>(null)
   const [editorTaskId, setEditorTaskId] = useState<string | null>(null)
   const [addNode, setAddNode] = useState<{ open: boolean; parentId: string | null }>({ open: false, parentId: null })
 
   const openAddChild = (parentId: string | null) => setAddNode({ open: true, parentId })
   const openEditor = (id: string) => { setSelectedTask(id); setEditorTaskId(id) }
+  const openAllocations = (id: string) => { setSelectedTask(id); setAllocationTaskId(id) }
 
   // Speed control functions
   const speedUp = () => {
@@ -222,7 +227,7 @@ function App() {
   // table serves both the native menu (over IPC) and the key handler, so the
   // menu, the keys and the help dialog cannot disagree.
   const commands: Record<string, () => void> = {
-    'import-csv': () => { if (!isImporting) handleImportCSV() },
+    'import-csv': () => { if (!isImporting) handleImport() },
     export: () => { if (project && project.modules.length > 0) setExportOpen(true) },
     undo: handleUndo,
     redo: handleRedo,
@@ -341,10 +346,10 @@ function App() {
               <div className="flex items-center gap-4">
                 <TooltipButton
                   className="p-2 text-sm border rounded hover:bg-accent disabled:opacity-50 transition-colors"
-                  onClick={handleImportCSV}
+                  onClick={handleImport}
                   disabled={isImporting}
-                  tooltip={t('shortcuts.importCSV')}
-                  aria-label={t('toolbar.importCSV')}
+                  tooltip={t('toolbar.importFile', { defaultValue: '导入 CSV / Excel (Ctrl+I)' })}
+                  aria-label={t('toolbar.importFile', { defaultValue: '导入 CSV / Excel' })}
                 >
                   {isImporting
                     ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -530,6 +535,7 @@ function App() {
                 onOpenTimeScale={() => setTimeScaleOpen(true)}
                 onOpenExcel={() => setExcelOpen(true)}
                 onAddChild={openAddChild}
+                onManageResources={() => setResourceManagerOpen(true)}
               />
             ) : (
               <GridCanvas width={800} height={600} />
@@ -600,6 +606,15 @@ function App() {
         taskId={editorTaskId}
         onClose={() => setEditorTaskId(null)}
         onAddChild={(parentId) => { setEditorTaskId(null); openAddChild(parentId) }}
+        onEditAllocations={id => { setEditorTaskId(null); openAllocations(id) }}
+      />
+      <ResourceManagerDialog
+        isOpen={resourceManagerOpen}
+        onClose={() => setResourceManagerOpen(false)}
+      />
+      <ResourceAllocationDialog
+        taskId={allocationTaskId}
+        onClose={() => setAllocationTaskId(null)}
       />
       {addNode.open && (
         <AddNodeDialog

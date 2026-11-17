@@ -71,7 +71,8 @@
   },
   "toolbar": {
     "importCSV": "CSVをインポート",
-    "importSuccess": "{{count}} 件のデータをインポートしました"
+    "importSuccess": "{{count}} 件のデータをインポートしました",
+    "importFile": "CSV / Excel を読み込む (Ctrl+I)"
   },
   "timeline": {
     "play": "再生",
@@ -116,7 +117,8 @@
     "invalidFormat": "無効なファイル形式",
     "importFailed": "インポートに失敗しました",
     "exportFailed": "エクスポートに失敗しました",
-    "unknown": "不明なエラー"
+    "unknown": "不明なエラー",
+    "unsupportedFile": ".csv または .xlsx ファイルを選択してください"
   },
   "settings": {
     "title": "設定",
@@ -380,7 +382,11 @@
     "nodeKind": "ノード種別",
     "nestHint": "子動作は別の子動作の親にでき、階層の深さに制限はありません。",
     "parent": "親",
-    "rootHint": "最上位モジュールを作成します"
+    "rootHint": "最上位モジュールを作成します",
+    "groupFlow": "フロー",
+    "groupFlowTip": "モジュール/機構/動作の階層で表示",
+    "groupResource": "リソース",
+    "groupResourceTip": "機構/モーターごとの占有と衝突を表示"
   },
   "timeScale": {
     "title": "時間目盛と精度",
@@ -416,5 +422,57 @@
     "importFailed": "Excel 読み込み失敗",
     "imported": "{{count}} 行を読み込み依存から再スケジュール済み。ガント図と表は同期しています。",
     "importOk": "Excel を読み込みました"
+  },
+  "resource": {
+    "title": "リソース",
+    "managerTitle": "リソース管理（機構 / モーター）",
+    "managerHint": "リソースは一度だけ定義し、全フローの動作で共有します。動作の「リソース占有」で参照してください。各フローで機構を作り直す必要はありません。",
+    "nameLabel": "名前",
+    "type": "種別",
+    "uses": "件の参照",
+    "add": "追加",
+    "new": "新規",
+    "newName": "新しいリソース名（例: チューブ把持）",
+    "remove": "リソースを削除",
+    "emptyShort": "リソースがありません",
+    "laneHeader": "リソース レーン",
+    "manage": "リソース管理",
+    "claims": "占有",
+    "busy": "稼働",
+    "conflicts": "件の衝突",
+    "empty": "リソースがありません。+ で機構/モーターを追加し、動作に占有を設定してください。",
+    "conflictHint": "赤色はリソース占有の衝突です（警告のみ、タイミングは自動変更しません）。衝突をクリックで該当動作へ移動。",
+    "allocTitle": "リソース占有",
+    "allocSection": "リソース占有",
+    "allocSectionHint": "正確なウィンドウ、重複は警告",
+    "editAlloc": "占有を編集",
+    "allocHint": "占有ウィンドウはこの動作の開始からの相対値です。依存で動作が繰り下がると占有も追従します。同一リソースの重複はリソース表示で赤く警告します（警告のみ）。",
+    "taskDuration": "動作時間",
+    "offset": "オフセット",
+    "duration": "時間",
+    "removeClaim": "占有を削除",
+    "addClaim": "占有を追加",
+    "selectResource": "リソース",
+    "newResource": "新規リソース",
+    "noResource": "（リソースなし。先に作成してください）",
+    "needResource": "先にリソースを追加してください",
+    "invalidNumber": "オフセットと時間は数値で入力",
+    "zeroDuration": "占有時間は 0 より大きく（動作時間内）"
+  },
+  "cycle": {
+    "title": "固定サイクル設定",
+    "enable": "複数サイクル展開を有効にする",
+    "hint": "保存される動作テンプレートは1つだけです。展開された各サイクルは読み取り専用で、どのインスタンスを編集してもテンプレートに反映されます。",
+    "length": "サイクル長 (ms)",
+    "repeats": "展開サイクル数",
+    "singleTotal": "1サイクルの実測時間",
+    "projectedTotal": "展開後のタイムライン",
+    "overrun": "個の動作がサイクル境界を超過；サイクル間のリソース競合はリソースビューで赤表示されます",
+    "within": "すべての動作がサイクル内で完了",
+    "single": "単一",
+    "singleTip": "編集可能なテンプレートを1つだけ表示",
+    "multi": "複数",
+    "multiTip": "固定周期で複数の読み取り専用インスタンスを展開",
+    "settings": "サイクル長と回数"
   }
 }

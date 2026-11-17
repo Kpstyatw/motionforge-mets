@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
-import { computeSchedule, flattenTree } from '@/lib/dependencyEngine'
-import { normalizeTimeConfig } from '@/lib/timeScale'
+import { useCycleView } from '@/hooks/useCycleView'
+import { flattenTree } from '@/lib/dependencyEngine'
+import { DEFAULT_EXCEL_LAYOUT } from '@/lib/timeScale'
 import { buildExcelRows, excelFileName, matrixStep } from '@/lib/excelModel'
 // ExcelJS is heavy: load the workbook reader/writer only when the user acts,
 // so the first paint (and the online bundle) stays small.
@@ -38,23 +39,23 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
   const [hasIssue, setHasIssue] = useState(false)
 
   useEffect(() => {
-    if (isOpen && project) {
-      setLayout({ ...project.excelLayout, columnWidths: { ...project.excelLayout.columnWidths } })
+    if (isOpen) {
+      // Initialise from the current project when there is one, otherwise from
+      // defaults — the dialog must open on a fresh, project-less session so a
+      // workbook can be the user's very first import.
+      const base = project?.excelLayout ?? DEFAULT_EXCEL_LAYOUT
+      setLayout({ ...base, columnWidths: { ...base.columnWidths } })
       setReport(null)
     }
   }, [isOpen, project?.excelLayout])
 
-  const config = normalizeTimeConfig(project?.timeConfig)
-  const schedule = useMemo(
-    () => computeSchedule(project?.modules ?? [], config),
-    [project?.modules, config.scaleMs, config.precisionMs, config.displayUnit]
-  )
+  const { config, expansion, schedule } = useCycleView()
   const rows = useMemo(
     () => flattenTree(schedule, new Set(collapsedTaskIds)),
     [schedule, collapsedTaskIds]
   )
 
-  if (!isOpen || !project || !layout) return null
+  if (!isOpen || !layout) return null
 
   const setNumber = (key: keyof ExcelLayoutConfig, value: string) => {
     setLayout(prev => prev ? { ...prev, [key]: Number(value) || 0 } : prev)
@@ -84,12 +85,19 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
   }
 
   const handleExport = async () => {
+    if (!project) return
     setBusy(true)
     try {
       persist()
       const { buildGanttWorkbook } = await import('@/services/excelService')
       const blob = await buildGanttWorkbook({
-        project: { ...project, excelLayout: layout },
+        project: {
+          ...project,
+          excelLayout: layout,
+          // The workbook mirrors the visible chart, including cycle instances.
+          allocations: expansion.allocations,
+          cycleConfig: expansion.config
+        },
         schedule,
         rows,
         layout,
@@ -122,10 +130,14 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
         return
       }
       loadProject({
-        ...project,
-        name: result.projectName || project.name,
+        ...(project ?? {}),
+        name: result.projectName || project?.name || 'Imported Project',
         modules: result.modules,
+        // Older workbooks have no resource sheets — keep the existing catalogue.
+        resources: result.resources?.length ? result.resources : (project?.resources ?? []),
+        allocations: result.allocations?.length ? result.allocations : (project?.allocations ?? []),
         timeConfig: result.timeConfig,
+        cycleConfig: result.cycleConfig,
         excelLayout: result.excelLayout
       })
       setLayout({ ...result.excelLayout!, columnWidths: { ...result.excelLayout!.columnWidths } })
@@ -216,7 +228,7 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            <button onClick={handleExport} disabled={busy}
+            <button onClick={handleExport} disabled={busy || !project}
               className="px-3 py-1.5 text-sm rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1">
               <Download className="h-3.5 w-3.5" />{t('excel.export', { defaultValue: '导出 Excel' })}
             </button>

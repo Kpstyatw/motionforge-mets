@@ -178,7 +178,9 @@ ipcMain.handle('dialog:openFile', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
       filters: [
+        { name: 'CSV / Excel', extensions: ['csv', 'xlsx', 'xlsm'] },
         { name: 'CSV Files', extensions: ['csv'] },
+        { name: 'Excel Files', extensions: ['xlsx', 'xlsm'] },
         { name: 'All Files', extensions: ['*'] }
       ]
     })
@@ -277,6 +279,17 @@ ipcMain.handle('fs:readFile', async (_, filePath: string) => {
   try {
     const data = await readFile(filePath, 'utf-8')
     return { success: true, data }
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+})
+
+// Binary counterpart for .xlsx/.xls: UTF-8 decoding corrupts a zip archive,
+// so ship the raw bytes to the renderer as base64 and rebuild a File there.
+ipcMain.handle('fs:readFileBinary', async (_, filePath: string) => {
+  try {
+    const buffer = await readFile(filePath)
+    return { success: true, data: buffer.toString('base64') }
   } catch (error: any) {
     return { success: false, error: error.message }
   }

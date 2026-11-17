@@ -71,7 +71,8 @@
   },
   "toolbar": {
     "importCSV": "匯入CSV",
-    "importSuccess": "已匯入 {{count}} 筆資料"
+    "importSuccess": "已匯入 {{count}} 筆資料",
+    "importFile": "匯入 CSV / Excel (Ctrl+I)"
   },
   "timeline": {
     "play": "播放",
@@ -116,7 +117,8 @@
     "invalidFormat": "檔案格式無效",
     "importFailed": "匯入失敗",
     "exportFailed": "匯出失敗",
-    "unknown": "未知錯誤"
+    "unknown": "未知錯誤",
+    "unsupportedFile": "請選擇 .csv 或 .xlsx 檔案"
   },
   "settings": {
     "title": "設定",
@@ -380,7 +382,11 @@
     "nodeKind": "節點類型",
     "nestHint": "子動作可作為另一個子動作的上級，層數不限。",
     "parent": "上級",
-    "rootHint": "將建立頂層模組"
+    "rootHint": "將建立頂層模組",
+    "groupFlow": "流程",
+    "groupFlowTip": "按模組/機構/動作層級檢視流程",
+    "groupResource": "資源",
+    "groupResourceTip": "按機構/馬達檢視佔用與衝突"
   },
   "timeScale": {
     "title": "時間刻度與精度",
@@ -416,5 +422,57 @@
     "importFailed": "Excel 匯入失敗",
     "imported": "已匯入 {{count}} 列並按依賴重新排程；甘特圖與表格已同步。",
     "importOk": "Excel 已匯入"
+  },
+  "resource": {
+    "title": "資源",
+    "managerTitle": "資源管理（機構 / 馬達）",
+    "managerHint": "資源只定義一次，供所有流程的動作共用。在任務的「資源佔用」裡引用它們，無需在各流程重複新建機構。",
+    "nameLabel": "名稱",
+    "type": "類型",
+    "uses": "處引用",
+    "add": "新增",
+    "new": "新建",
+    "newName": "新資源名稱（如 管庫抓手）",
+    "remove": "刪除資源",
+    "emptyShort": "暫無資源",
+    "laneHeader": "資源泳道",
+    "manage": "管理資源",
+    "claims": "佔用",
+    "busy": "忙碌",
+    "conflicts": "處衝突",
+    "empty": "暫無資源。點擊 + 新增機構/馬達，再為動作設定佔用。",
+    "conflictHint": "紅色為資源佔用衝突（僅提示，不自動改時序）。點擊衝突塊可跳到對應動作。",
+    "allocTitle": "資源佔用",
+    "allocSection": "資源佔用",
+    "allocSectionHint": "精確視窗，重疊會提示",
+    "editAlloc": "編輯佔用",
+    "allocHint": "佔用視窗相對本動作開始時間。動作被依賴順延時，佔用視窗自動跟隨。同一資源視窗重疊會在資源檢視標紅（僅提示）。",
+    "taskDuration": "動作時長",
+    "offset": "偏移",
+    "duration": "時長",
+    "removeClaim": "刪除佔用",
+    "addClaim": "新增佔用",
+    "selectResource": "資源",
+    "newResource": "新建資源",
+    "noResource": "（無資源，請先新建）",
+    "needResource": "請先新增一個資源",
+    "invalidNumber": "偏移與時長必須是數字",
+    "zeroDuration": "佔用時長必須大於 0（且在動作時長內）"
+  },
+  "cycle": {
+    "title": "固定週期設定",
+    "enable": "啟用多週期展開",
+    "hint": "底層只保存一份動作範本；展開後每個週期是唯讀實例，編輯任一實例都會同步回範本。",
+    "length": "週期時長 (ms)",
+    "repeats": "展開週期數",
+    "singleTotal": "單週期實際節拍",
+    "projectedTotal": "展開後總時間軸",
+    "overrun": "個動作超出週期邊界，跨週期資源衝突會在資源檢視標紅",
+    "within": "所有動作均在週期內完成",
+    "single": "單週期",
+    "singleTip": "只顯示一份動作範本，可直接編輯",
+    "multi": "多週期",
+    "multiTip": "按固定週期展開多個唯讀實例",
+    "settings": "週期時長與數量"
   }
 }

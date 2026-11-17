@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // File system operations
   readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
+  readFileBinary: (filePath: string) => ipcRenderer.invoke('fs:readFileBinary', filePath),
   writeFile: (filePath: string, data: string) => ipcRenderer.invoke('fs:writeFile', filePath, data),
   
   // Application controls
@@ -53,6 +54,7 @@ declare global {
       saveFile: (options: any) => Promise<Electron.SaveDialogReturnValue>
       platform: NodeJS.Platform
       readFile: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>
+      readFileBinary: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>
       writeFile: (filePath: string, data: string) => Promise<{ success: boolean; error?: string }>
       minimize: () => void
       maximize: () => void

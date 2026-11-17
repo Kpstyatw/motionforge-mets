@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs'
 import {
-  ExcelLayoutConfig, ModuleData, ProjectData, TaskKind, TimeConfig
+  CycleConfig, ExcelLayoutConfig, ModuleData, ProjectData, Resource, ResourceAllocation,
+  TaskKind, TimeConfig
 } from '@/types'
 import { ScheduleResult, TreeRow, parsePredecessors } from '@/lib/dependencyEngine'
 import {
@@ -8,6 +9,9 @@ import {
   KIND_LABELS, MATRIX_MAX_COLUMNS, matrixStep
 } from '@/lib/excelModel'
 import { DEFAULT_EXCEL_LAYOUT, DEFAULT_TIME_CONFIG, formatTime, normalizeTimeConfig } from '@/lib/timeScale'
+import {
+  collapseCycleProjection, cycleIndexOf, normalizeCycleConfig, templateIdOf
+} from '@/lib/cycleEngine'
 import { MODULE_COLORS } from '@/stores/useProjectStore'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -32,6 +36,8 @@ export type { ExcelTableRow } from '@/lib/excelModel'
 const SHEET_TABLE = '动作时序'
 const SHEET_MATRIX = '甘特矩阵'
 const SHEET_META = '设置与依赖'
+const SHEET_RESOURCES = '资源'
+const SHEET_ALLOCATIONS = '资源占用'
 
 export interface ExcelExportInput {
   project: ProjectData
@@ -47,7 +53,10 @@ export interface ExcelExportInput {
 export interface ExcelImportResult {
   success: boolean
   modules?: ModuleData[]
+  resources?: Resource[]
+  allocations?: ResourceAllocation[]
   timeConfig?: TimeConfig
+  cycleConfig?: CycleConfig
   excelLayout?: ExcelLayoutConfig
   projectName?: string
   error?: string
@@ -206,12 +215,16 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
     row.height = layout.rowHeight
     row.font = { size: layout.fontSize }
   }
+  const cycleCfg = normalizeCycleConfig(project.cycleConfig)
   const settings: Array<[string, string | number]> = [
     ['projectName', project.name],
     ['schemaVersion', '2'],
     ['scaleMs', config.scaleMs],
     ['precisionMs', config.precisionMs],
     ['displayUnit', config.displayUnit],
+    ['cycleEnabled', cycleCfg.enabled ? 1 : 0],
+    ['cycleMs', cycleCfg.cycleMs],
+    ['cycleRepeats', cycleCfg.repeats],
     ['rowHeight', layout.rowHeight],
     ['headerHeight', layout.headerHeight],
     ['matrixCellWidth', layout.matrixCellWidth],
@@ -233,6 +246,56 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
     ;(task.module.predecessors ?? []).forEach(dep => {
       addMeta('依赖', task.code, schedule.byId[dep.fromId]?.code ?? dep.fromId, `${dep.type} / ${dep.lagMs}`, dep.id)
     })
+  })
+
+  // ---- Sheet 4: global resource catalogue ------------------------------
+  const resWs = workbook.addWorksheet(SHEET_RESOURCES, { views: [{ state: 'frozen', ySplit: 1 }] })
+  resWs.columns = [
+    { header: '资源ID', key: 'id', width: 24 },
+    { header: '名称', key: 'name', width: 20 },
+    { header: '类型', key: 'type', width: 16 },
+    { header: '颜色', key: 'color', width: 14 },
+    { header: '备注', key: 'notes', width: 30 }
+  ]
+  styleHeader(resWs, 1, 5, layout)
+  project.resources.forEach(r => {
+    const row = resWs.addRow({ id: r.id, name: r.name, type: r.type ?? '', color: r.color ?? '', notes: r.notes ?? '' })
+    row.height = layout.rowHeight
+    row.font = { size: layout.fontSize }
+    if (r.color) resWs.getCell(row.number, 4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(r.color) } }
+  })
+
+  // ---- Sheet 5: exact-window claims (many-to-many) ---------------------
+  const allocWs = workbook.addWorksheet(SHEET_ALLOCATIONS, { views: [{ state: 'frozen', ySplit: 1 }] })
+  allocWs.columns = [
+    { header: '占用ID', key: 'id', width: 24 },
+    { header: '动作编号', key: 'taskCode', width: 14 },
+    { header: '资源ID', key: 'resourceId', width: 24 },
+    { header: '资源名称', key: 'resourceName', width: 18 },
+    { header: '偏移(ms)', key: 'offsetMs', width: 12 },
+    { header: '占用时长(ms)', key: 'durationMs', width: 16 },
+    { header: '起(ms)', key: 'startMs', width: 12 },
+    { header: '止(ms)', key: 'endMs', width: 12 },
+    { header: '备注', key: 'notes', width: 24 }
+  ]
+  styleHeader(allocWs, 1, 9, layout)
+  const resourceById = new Map(project.resources.map(r => [r.id, r]))
+  project.allocations.forEach(a => {
+    const task = schedule.byId[a.taskId]
+    const row = allocWs.addRow({
+      id: a.id,
+      taskCode: task?.code ?? a.taskId,
+      resourceId: a.resourceId,
+      resourceName: resourceById.get(a.resourceId)?.name ?? a.resourceId,
+      offsetMs: a.offsetMs,
+      durationMs: a.durationMs,
+      startMs: (task?.startMs ?? 0) + a.offsetMs,
+      endMs: (task?.startMs ?? 0) + a.offsetMs + a.durationMs,
+      notes: a.notes ?? ''
+    })
+    row.height = layout.rowHeight
+    row.font = { size: layout.fontSize }
+    ;[5, 6, 7, 8].forEach(c => { allocWs.getCell(row.number, c).numFmt = '#,##0' })
   })
 
   const buffer = await workbook.xlsx.writeBuffer()
@@ -299,15 +362,19 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
 
     for (let r = 2; r <= ws.rowCount; r++) {
       const row = ws.getRow(r)
-      const code = text(row, 'code')
-      if (!code) continue
+      const rawCode = text(row, 'code')
+      if (!rawCode) continue
+      // A multi-cycle workbook holds one row per instance. Only @C1 rows are
+      // authored data; later cycles are regenerated from CycleConfig on import.
+      if (cycleIndexOf(rawCode) > 1 || cycleIndexOf(text(row, 'id')) > 1) continue
+      const code = templateIdOf(rawCode)
       const rawKind = text(row, 'kind')
       const kind: TaskKind = rawKind.includes('模块') ? 'module'
         : rawKind.includes('机构') ? 'mechanism'
         : rawKind.includes('子动作') || rawKind.toLowerCase() === 'subaction' ? 'subaction'
         : 'action'
       const isSummary = kind === 'module' || kind === 'mechanism'
-      const id = text(row, 'id') || uuidv4()
+      const id = templateIdOf(text(row, 'id')) || uuidv4()
       codeToId.set(code, id)
       const startMs = Math.max(0, Math.round(number(row, 'startMs')))
       let durationMs = Math.max(0, Math.round(number(row, 'durationMs')))
@@ -344,14 +411,18 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
       drafts.push({
         code,
         kind,
-        parentCode: text(row, 'parentCode'),
+        parentCode: templateIdOf(text(row, 'parentCode')),
         predecessorText: text(row, 'predecessors'),
         node
       })
     }
     if (!drafts.length) return { success: false, error: 'Excel 中没有有效的数据行' }
 
-    const resolve = (code: string) => codeToId.get(code) ?? codeToId.get(code.toUpperCase())
+    const resolve = (code: string) => {
+      const stem = templateIdOf(code)
+      return codeToId.get(code) ?? codeToId.get(code.toUpperCase())
+        ?? codeToId.get(stem) ?? codeToId.get(stem.toUpperCase())
+    }
     drafts.forEach(d => {
       if (d.parentCode) {
         const parentId = resolve(d.parentCode)
@@ -365,6 +436,7 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
     // Settings from sheet 3 (fall back to defaults).
     let timeConfig = normalizeTimeConfig(DEFAULT_TIME_CONFIG)
     let excelLayout: ExcelLayoutConfig = { ...DEFAULT_EXCEL_LAYOUT, columnWidths: { ...DEFAULT_EXCEL_LAYOUT.columnWidths } }
+    let cycleConfig = normalizeCycleConfig(undefined)
     let projectName: string | undefined
     const meta = workbook.getWorksheet(SHEET_META)
     if (meta) {
@@ -377,9 +449,10 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
         const value = cellText(row.getCell(3).value).trim()
         if (section === '设置') settings.set(key, value)
         if (section === '依赖' && key && value) {
-          const list = extra.get(key) ?? []
-          list.push({ depFrom: value, raw: cellText(row.getCell(4).value).trim() })
-          extra.set(key, list)
+          const stem = templateIdOf(key)
+          const list = extra.get(stem) ?? []
+          list.push({ depFrom: templateIdOf(value), raw: cellText(row.getCell(4).value).trim() })
+          extra.set(stem, list)
         }
       }
       projectName = settings.get('projectName')
@@ -387,6 +460,11 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
         scaleMs: Number(settings.get('scaleMs') ?? DEFAULT_TIME_CONFIG.scaleMs),
         precisionMs: Number(settings.get('precisionMs') ?? DEFAULT_TIME_CONFIG.precisionMs),
         displayUnit: (settings.get('displayUnit') as TimeConfig['displayUnit']) || 'ms'
+      })
+      cycleConfig = normalizeCycleConfig({
+        enabled: Number(settings.get('cycleEnabled') ?? 0) === 1,
+        cycleMs: Number(settings.get('cycleMs') ?? 30_000),
+        repeats: Number(settings.get('cycleRepeats') ?? 1)
       })
       excelLayout = {
         rowHeight: Number(settings.get('rowHeight') ?? excelLayout.rowHeight),
@@ -428,10 +506,66 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
       d.node.duration = timeConfig.scaleMs
     })
 
+    // ---- Resources & allocations from sheets 4/5 -----------------------
+    const resources: Resource[] = []
+    const resWs = workbook.getWorksheet(SHEET_RESOURCES)
+    if (resWs) {
+      for (let r = 2; r <= resWs.rowCount; r++) {
+        const row = resWs.getRow(r)
+        const id = cellText(row.getCell(1).value).trim()
+        const name = cellText(row.getCell(2).value).trim()
+        if (!name && !id) continue
+        resources.push({
+          id: id || uuidv4(),
+          name: name || id,
+          type: cellText(row.getCell(3).value).trim() || undefined,
+          color: cellText(row.getCell(4).value).trim() || undefined,
+          notes: cellText(row.getCell(5).value).trim() || undefined
+        })
+      }
+    }
+    const allocations: ResourceAllocation[] = []
+    const allocWs = workbook.getWorksheet(SHEET_ALLOCATIONS)
+    if (allocWs) {
+      const resourceByKey = new Map<string, string>()
+      resources.forEach(rs => { resourceByKey.set(rs.id, rs.id); resourceByKey.set(rs.name, rs.id) })
+      for (let r = 2; r <= allocWs.rowCount; r++) {
+        const row = allocWs.getRow(r)
+        const rawTaskCode = cellText(row.getCell(2).value).trim()
+        if (cycleIndexOf(rawTaskCode) > 1) continue
+        const taskCode = templateIdOf(rawTaskCode)
+        const resourceKey = cellText(row.getCell(3).value).trim() || cellText(row.getCell(4).value).trim()
+        const taskId = resolve(taskCode)
+        const resourceId = resourceByKey.get(resourceKey)
+        const offsetMs = Math.max(0, Math.round(cellNumber(row.getCell(5).value)))
+        const durationMs = Math.max(0, Math.round(cellNumber(row.getCell(6).value)))
+        if (!taskId || !resourceId || durationMs <= 0) {
+          if (taskCode || resourceKey) warnings.push(`占用行 ${r} 的动作或资源未找到，已跳过`)
+          continue
+        }
+        allocations.push({
+          id: templateIdOf(cellText(row.getCell(1).value).trim()) || uuidv4(),
+          taskId,
+          resourceId,
+          offsetMs,
+          durationMs,
+          notes: cellText(row.getCell(9).value).trim() || undefined
+        })
+      }
+    }
+
+    const folded = collapseCycleProjection(drafts.map(d => d.node), allocations)
+    if (folded.dropped > 0) {
+      warnings.push(`已折叠 ${folded.dropped} 行周期实例为模板，按周期配置重新展开`)
+    }
+
     return {
       success: true,
-      modules: drafts.map(d => d.node),
+      modules: folded.modules,
+      resources,
+      allocations: folded.allocations,
       timeConfig,
+      cycleConfig,
       excelLayout,
       projectName,
       warnings

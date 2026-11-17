@@ -71,7 +71,8 @@
   },
   "toolbar": {
     "importCSV": "Import CSV",
-    "importSuccess": "Imported {{count}} rows"
+    "importSuccess": "Imported {{count}} rows",
+    "importFile": "Import CSV / Excel (Ctrl+I)"
   },
   "timeline": {
     "play": "Play",
@@ -116,7 +117,8 @@
     "invalidFormat": "Invalid file format",
     "importFailed": "Import failed",
     "exportFailed": "Export failed",
-    "unknown": "Unknown error"
+    "unknown": "Unknown error",
+    "unsupportedFile": "Please choose a .csv or .xlsx file"
   },
   "settings": {
     "title": "Settings",
@@ -380,7 +382,11 @@
     "nodeKind": "Node type",
     "nestHint": "A sub-action can be the parent of another sub-action, with no depth limit.",
     "parent": "Parent",
-    "rootHint": "Will create a top-level module"
+    "rootHint": "Will create a top-level module",
+    "groupFlow": "Flow",
+    "groupFlowTip": "View by module / mechanism / action hierarchy",
+    "groupResource": "Resource",
+    "groupResourceTip": "View claims and conflicts by mechanism / motor"
   },
   "timeScale": {
     "title": "Time scale & precision",
@@ -416,5 +422,57 @@
     "importFailed": "Excel import failed",
     "imported": "Imported {{count}} rows and re-scheduled from dependencies; chart and table are in sync.",
     "importOk": "Excel imported"
+  },
+  "resource": {
+    "title": "Resources",
+    "managerTitle": "Resources (mechanisms / motors)",
+    "managerHint": "Each resource is defined once and shared by actions across all flows. Reference them in an action’s resource allocations — no need to recreate the mechanism in every flow.",
+    "nameLabel": "Name",
+    "type": "Type",
+    "uses": "uses",
+    "add": "Add",
+    "new": "New",
+    "newName": "New resource name (e.g. tube gripper)",
+    "remove": "Remove resource",
+    "emptyShort": "No resources yet",
+    "laneHeader": "Resource lanes",
+    "manage": "Manage resources",
+    "claims": "claims",
+    "busy": "busy",
+    "conflicts": "conflicts",
+    "empty": "No resources. Click + to add a mechanism/motor, then set claims on actions.",
+    "conflictHint": "Red marks a resource conflict (hint only — timing is not auto-changed). Click a conflict to jump to its action.",
+    "allocTitle": "Resource allocation",
+    "allocSection": "Resource allocation",
+    "allocSectionHint": "Exact windows, overlaps are flagged",
+    "editAlloc": "Edit claims",
+    "allocHint": "Claim windows are relative to this action’s start. When the action is pushed by dependencies, its claims move with it. Overlapping windows on one resource are flagged red in the resource view (hint only).",
+    "taskDuration": "Action duration",
+    "offset": "Offset",
+    "duration": "Duration",
+    "removeClaim": "Remove claim",
+    "addClaim": "Add claim",
+    "selectResource": "Resource",
+    "newResource": "New resource",
+    "noResource": "（no resources — create one first）",
+    "needResource": "Add a resource first",
+    "invalidNumber": "Offset and duration must be numbers",
+    "zeroDuration": "Duration must be > 0 (and within the action)"
+  },
+  "cycle": {
+    "title": "Fixed cycle settings",
+    "enable": "Enable multi-cycle projection",
+    "hint": "Only one action template is stored. Projected cycles are read-only; editing any instance writes back to the template.",
+    "length": "Cycle length (ms)",
+    "repeats": "Cycle count",
+    "singleTotal": "Single-cycle makespan",
+    "projectedTotal": "Projected timeline",
+    "overrun": "actions cross the cycle boundary; cross-cycle resource conflicts are marked in the resource view",
+    "within": "All actions finish inside one cycle",
+    "single": "Single",
+    "singleTip": "Show one editable template",
+    "multi": "Multi",
+    "multiTip": "Project several read-only cycles",
+    "settings": "Cycle length and count"
   }
 }

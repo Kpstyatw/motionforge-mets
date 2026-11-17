@@ -2,8 +2,9 @@ import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
 import { v4 as uuidv4 } from 'uuid'
 import {
-  CanvasConfig, Dependency, DependencyType, ExcelLayoutConfig,
-  GanttConfig, ModuleData, ProjectData, StartMode, TaskKind, TimeConfig
+  CanvasConfig, CycleConfig, Dependency, DependencyType, ExcelLayoutConfig,
+  GanttConfig, ModuleData, ProjectData, Resource, ResourceAllocation,
+  StartMode, TaskKind, TimeConfig
 } from '@/types'
 import { useHistoryStore } from './useHistoryStore'
 import {
@@ -14,6 +15,7 @@ import {
   DEFAULT_EXCEL_LAYOUT, DEFAULT_GANTT_CONFIG, DEFAULT_TIME_CONFIG,
   normalizeTimeConfig, quantize
 } from '@/lib/timeScale'
+import { DEFAULT_CYCLE_CONFIG, expandCycles, normalizeCycleConfig } from '@/lib/cycleEngine'
 
 /**
  * Project store — the only writer of resolved timing.
@@ -44,12 +46,15 @@ function freshProject(): ProjectData {
   return {
     name: 'Untitled Project',
     modules: [],
+    resources: [],
+    allocations: [],
     canvasConfig: { ...defaultCanvasConfig },
     createdAt: now,
     updatedAt: now,
     version: '2.0.0',
     schemaVersion: 2,
     timeConfig: { ...DEFAULT_TIME_CONFIG },
+    cycleConfig: { ...DEFAULT_CYCLE_CONFIG },
     excelLayout: { ...DEFAULT_EXCEL_LAYOUT, columnWidths: { ...DEFAULT_EXCEL_LAYOUT.columnWidths } },
     ganttConfig: { ...DEFAULT_GANTT_CONFIG }
   }
@@ -67,12 +72,28 @@ export function migrateProject(input: Partial<ProjectData> & { modules?: ModuleD
     schemaVersion: 2,
     canvasConfig: { ...base.canvasConfig, ...(input.canvasConfig ?? {}) },
     timeConfig,
+    cycleConfig: normalizeCycleConfig(input.cycleConfig),
     excelLayout: {
       ...base.excelLayout,
       ...(input.excelLayout ?? {}),
       columnWidths: { ...base.excelLayout.columnWidths, ...(input.excelLayout?.columnWidths ?? {}) }
     },
     ganttConfig: { ...base.ganttConfig, ...(input.ganttConfig ?? {}) },
+    resources: (input.resources ?? []).map(r => ({
+      id: r.id || uuidv4(),
+      name: r.name || '资源',
+      type: r.type,
+      color: r.color,
+      notes: r.notes
+    })),
+    allocations: (input.allocations ?? []).map(a => ({
+      id: a.id || uuidv4(),
+      taskId: a.taskId,
+      resourceId: a.resourceId,
+      offsetMs: Math.max(0, Math.round(a.offsetMs || 0)),
+      durationMs: Math.max(0, Math.round(a.durationMs || 0)),
+      notes: a.notes
+    })).filter(a => a.taskId && a.resourceId),
     modules: syncLegacyFields(modules, computeSchedule(modules, timeConfig), timeConfig)
   }
 }
@@ -108,6 +129,7 @@ interface ProjectState {
 
   // ---- Gantt edition ----
   setTimeConfig: (config: Partial<TimeConfig>) => void
+  setCycleConfig: (config: Partial<CycleConfig>) => void
   setExcelLayout: (config: Partial<ExcelLayoutConfig>) => void
   setGanttConfig: (config: Partial<GanttConfig>) => void
   setTaskTiming: (id: string, patch: TimingPatch) => void
@@ -119,6 +141,14 @@ interface ProjectState {
   deleteTask: (id: string) => void
   setTaskField: (id: string, field: 'moduleName' | 'actionDescription' | 'stage' | 'color', value: string) => void
   recompute: () => void
+
+  // ---- Resource allocation edition ----
+  addResource: (resource?: Partial<Resource>) => string
+  updateResource: (id: string, patch: Partial<Resource>) => void
+  removeResource: (id: string) => void
+  addAllocation: (allocation: Omit<ResourceAllocation, 'id'>) => string | null
+  updateAllocation: (id: string, patch: Partial<ResourceAllocation>) => void
+  removeAllocation: (id: string) => void
 }
 
 interface CommitState {
@@ -134,8 +164,13 @@ function resolveProject(project: ProjectData): string[] {
   const schedule = computeSchedule(normalized, timeConfig)
   project.modules = syncLegacyFields(normalized, schedule, timeConfig) as typeof project.modules
   project.timeConfig = timeConfig
+  project.cycleConfig = normalizeCycleConfig(project.cycleConfig)
+  project.cycleConfig.cycleMs = Math.max(timeConfig.precisionMs, project.cycleConfig.cycleMs)
+  const cycleWarnings = expandCycles(
+    project.modules, project.allocations, project.cycleConfig, timeConfig.precisionMs
+  ).warnings
   project.updatedAt = new Date().toISOString()
-  return schedule.warnings
+  return [...schedule.warnings, ...cycleWarnings]
 }
 
 /** Commit a new module list with history + full cascade recompute. */
@@ -216,6 +251,13 @@ export const useProjectStore = create<ProjectState>()(
     setTimeConfig: config => set(state => {
       if (!state.project) return
       state.project.timeConfig = normalizeTimeConfig({ ...state.project.timeConfig, ...config })
+      state.scheduleWarnings = resolveProject(state.project)
+      state.unsavedChanges = true
+    }),
+
+    setCycleConfig: config => set(state => {
+      if (!state.project) return
+      state.project.cycleConfig = normalizeCycleConfig({ ...state.project.cycleConfig, ...config })
       state.scheduleWarnings = resolveProject(state.project)
       state.unsavedChanges = true
     }),
@@ -451,6 +493,9 @@ export const useProjectStore = create<ProjectState>()(
           predecessors: (m.predecessors ?? []).filter(d => !removed.has(d.fromId))
         }))
       commit(state, next as ModuleData[])
+      // Drop every allocation that referenced a deleted action/subaction.
+      state.project.allocations = state.project.allocations.filter(a => !removed.has(a.taskId))
+      state.unsavedChanges = true
     }),
 
     setTaskField: (id, field, value) => set(state => {
@@ -462,6 +507,82 @@ export const useProjectStore = create<ProjectState>()(
     recompute: () => set(state => {
       if (!state.project) return
       state.scheduleWarnings = resolveProject(state.project)
+    }),
+
+    addResource: (resource) => {
+      const id = uuidv4()
+      set(state => {
+        if (!state.project) return
+        state.project.resources.push({
+          id,
+          name: resource?.name ?? '新资源',
+          type: resource?.type,
+          color: resource?.color,
+          notes: resource?.notes
+        })
+        state.project.updatedAt = new Date().toISOString()
+        state.unsavedChanges = true
+      })
+      return id
+    },
+
+    updateResource: (id, patch) => set(state => {
+      if (!state.project) return
+      const r = state.project.resources.find(x => x.id === id)
+      if (!r) return
+      Object.assign(r, patch)
+      state.project.updatedAt = new Date().toISOString()
+      state.unsavedChanges = true
+    }),
+
+    removeResource: id => set(state => {
+      if (!state.project) return
+      state.project.resources = state.project.resources.filter(r => r.id !== id)
+      state.project.allocations = state.project.allocations.filter(a => a.resourceId !== id)
+      state.project.updatedAt = new Date().toISOString()
+      state.unsavedChanges = true
+    }),
+
+    addAllocation: allocation => {
+      const project = get().project
+      if (!project) return null
+      if (allocation.durationMs <= 0) return null
+      if (!project.modules.some(m => m.id === allocation.taskId)) return null
+      if (!project.resources.some(r => r.id === allocation.resourceId)) return null
+      const id = uuidv4()
+      set(state => {
+        if (!state.project) return
+        const cfg = normalizeTimeConfig(state.project.timeConfig)
+        state.project.allocations.push({
+          ...allocation,
+          id,
+          offsetMs: Math.max(0, quantize(allocation.offsetMs, cfg.precisionMs, 'round')),
+          durationMs: Math.max(0, quantize(allocation.durationMs, cfg.precisionMs, 'round'))
+        })
+        state.project.updatedAt = new Date().toISOString()
+        state.unsavedChanges = true
+      })
+      return id
+    },
+
+    updateAllocation: (id, patch) => set(state => {
+      if (!state.project) return
+      const a = state.project.allocations.find(x => x.id === id)
+      if (!a) return
+      const cfg = normalizeTimeConfig(state.project.timeConfig)
+      if (patch.offsetMs !== undefined) a.offsetMs = Math.max(0, quantize(patch.offsetMs, cfg.precisionMs, 'round'))
+      if (patch.durationMs !== undefined) a.durationMs = Math.max(0, quantize(patch.durationMs, cfg.precisionMs, 'round'))
+      if (patch.resourceId !== undefined) a.resourceId = patch.resourceId
+      if (patch.notes !== undefined) a.notes = patch.notes
+      state.project.updatedAt = new Date().toISOString()
+      state.unsavedChanges = true
+    }),
+
+    removeAllocation: id => set(state => {
+      if (!state.project) return
+      state.project.allocations = state.project.allocations.filter(a => a.id !== id)
+      state.project.updatedAt = new Date().toISOString()
+      state.unsavedChanges = true
     })
   }))
 )

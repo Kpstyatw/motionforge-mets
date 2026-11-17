@@ -4,11 +4,17 @@ import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useAnimationStore } from '@/stores/useAnimationStore'
 import {
-  collectPredecessorIds, collectSuccessorIds, computeSchedule, flattenTree, TreeRow
+  collectPredecessorIds, collectSuccessorIds, flattenTree, TreeRow
 } from '@/lib/dependencyEngine'
-import { formatTime, normalizeTimeConfig, rulerTicks } from '@/lib/timeScale'
+import { useCycleView } from '@/hooks/useCycleView'
+import {
+  templateIdOf, normalizeCycleConfig
+} from '@/lib/cycleEngine'
+import { formatTime, rulerTicks } from '@/lib/timeScale'
+import { CycleDialog } from './CycleDialog'
+import { ResourceLanes } from './ResourceLanes'
 import { TaskKind } from '@/types'
-import { ChevronDown, ChevronRight, ZoomIn, ZoomOut, Maximize2, Plus, Clock3 } from 'lucide-react'
+import { ChevronDown, ChevronRight, ZoomIn, ZoomOut, Maximize2, Plus, Clock3, Layers3, Repeat2, Settings2 } from 'lucide-react'
 
 /**
  * The Gantt view. Rows follow the four-level hierarchy
@@ -34,18 +40,22 @@ const KIND_STYLE: Record<TaskKind, string> = {
   subaction: 'bg-violet-500/15 text-violet-300 border-violet-500/30'
 }
 
+/** Which dimension the Gantt groups rows by: the flow tree or physical resources. */
+type GroupBy = 'flow' | 'resource'
+
 interface GanttViewProps {
   onEditTask: (id: string) => void
   onOpenTimeScale: () => void
   onOpenExcel: () => void
   onAddChild: (parentId: string | null) => void
+  onManageResources: () => void
 }
 
 export const GanttView: React.FC<GanttViewProps> = ({
-  onEditTask, onOpenTimeScale, onOpenExcel, onAddChild
+  onEditTask, onOpenTimeScale, onOpenExcel, onAddChild, onManageResources
 }) => {
   const { t } = useTranslation()
-  const { project, setGanttConfig } = useProjectStore()
+  const { project, setGanttConfig, setCycleConfig } = useProjectStore()
   const {
     selectedTaskId, setSelectedTask, collapsedTaskIds, toggleCollapsed,
     expandAll, collapseAllSubActions
@@ -53,19 +63,26 @@ export const GanttView: React.FC<GanttViewProps> = ({
   const currentFrame = useAnimationStore(state => state.currentFrame)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [hovered, setHovered] = useState<string | null>(null)
+  const [groupBy, setGroupBy] = useState<GroupBy>('flow')
+  const [cycleDialogOpen, setCycleDialogOpen] = useState(false)
 
-  const config = normalizeTimeConfig(project?.timeConfig)
+  const { config, expansion, schedule, resourceSchedule, totalMs } = useCycleView()
+  const expanded = expansion.expanded
+  const cycleCfg = normalizeCycleConfig(expansion.config)
   const gantt = project?.ganttConfig
   const pxPerMs = gantt?.pxPerMs ?? 0.35
   const rowHeight = gantt?.rowHeight ?? 34
   const showDependencies = gantt?.showDependencies ?? true
   const showSummaries = gantt?.showSummaries ?? true
 
-  const schedule = useMemo(
-    () => computeSchedule(project?.modules ?? [], config),
-    [project?.modules, config.scaleMs, config.precisionMs, config.displayUnit]
-  )
-  const collapsed = useMemo(() => new Set(collapsedTaskIds), [collapsedTaskIds])
+  // Collapsing a template row hides every projected instance of that row.
+  const collapsed = useMemo(() => {
+    const ids = new Set(collapsedTaskIds)
+    if (expanded) {
+      collapsedTaskIds.forEach(id => (expansion.templateToInstances[id] ?? []).forEach(i => ids.add(i)))
+    }
+    return ids
+  }, [collapsedTaskIds, expanded, expansion.templateToInstances])
   const rows = useMemo(() => flattenTree(schedule, collapsed), [schedule, collapsed])
   const hiddenCount = schedule.tasks.length - rows.length
 
@@ -77,7 +94,6 @@ export const GanttView: React.FC<GanttViewProps> = ({
     return set
   }, [schedule, selectedTaskId])
 
-  const totalMs = Math.max(schedule.totalMs, 1)
   const chartWidth = Math.max(700, (totalMs + config.scaleMs * 3) * pxPerMs + 60)
   const bodyHeight = Math.max(240, rows.length * rowHeight + 60)
   const ticks = rulerTicks(totalMs, config.scaleMs, pxPerMs, 74)
@@ -131,6 +147,54 @@ export const GanttView: React.FC<GanttViewProps> = ({
       {/* Gantt toolbar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b flex-wrap text-xs">
         <span className="font-semibold mr-1">{t('gantt.title', { defaultValue: '动作时序甘特图' })}</span>
+        <div className="flex items-center gap-0.5 border rounded p-0.5">
+          <button
+            onClick={() => setGroupBy('flow')}
+            className={`px-2 py-0.5 rounded ${groupBy === 'flow' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
+            title={t('gantt.groupFlowTip', { defaultValue: '按模块/机构/动作层级查看流程' })}
+          >
+            {t('gantt.groupFlow', { defaultValue: '流程' })}
+          </button>
+          <button
+            onClick={() => setGroupBy('resource')}
+            className={`px-2 py-0.5 rounded flex items-center gap-1 ${groupBy === 'resource' ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
+            title={t('gantt.groupResourceTip', { defaultValue: '按机构/电机查看占用与冲突' })}
+          >
+            <Layers3 className="h-3 w-3" />{t('gantt.groupResource', { defaultValue: '资源' })}
+            {resourceSchedule.conflicts.length > 0 && (
+              <span className="px-1 rounded bg-red-500 text-white text-[9px]">{resourceSchedule.conflicts.length}</span>
+            )}
+          </button>
+        </div>
+        {/* Single cycle / projected multi-cycle view switch */}
+        <div className="flex items-center gap-1 border-l pl-2">
+          <div className="flex border rounded p-0.5">
+            <button
+              onClick={() => setCycleConfig({ enabled: false })}
+              className={`px-2 py-0.5 rounded ${!expanded ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
+              title={t('cycle.singleTip', { defaultValue: '只显示一份动作模板，可直接编辑' })}
+            >
+              {t('cycle.single', { defaultValue: '单周期' })}
+            </button>
+            <button
+              onClick={() => setCycleConfig({ enabled: true })}
+              className={`px-2 py-0.5 rounded flex items-center gap-1 ${expanded ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}`}
+              title={t('cycle.multiTip', { defaultValue: '按固定周期展开多个只读实例' })}
+            >
+              <Repeat2 className="h-3 w-3" />
+              {t('cycle.multi', { defaultValue: '多周期' })}
+            </button>
+          </div>
+          <button onClick={() => setCycleDialogOpen(true)} className="p-1 border rounded hover:bg-accent"
+            title={t('cycle.settings', { defaultValue: '周期时长与数量' })}>
+            <Settings2 className="h-3.5 w-3.5" />
+          </button>
+          <span className="text-muted-foreground tabular-nums">
+            {expanded
+              ? `${cycleCfg.repeats} × ${formatTime(cycleCfg.cycleMs, config)}`
+              : formatTime(cycleCfg.cycleMs, config)}
+          </span>
+        </div>
         <span className="text-muted-foreground tabular-nums">
           {t('gantt.total', { defaultValue: '总节拍' })} {formatTime(totalMs, config)}
         </span>
@@ -167,7 +231,7 @@ export const GanttView: React.FC<GanttViewProps> = ({
           {hiddenCount > 0 && <span className="text-muted-foreground">{hiddenCount} {t('gantt.hidden', { defaultValue: '行已隐藏' })}</span>}
         </div>
         <div className="flex items-center gap-1 border-l pl-2">
-          <button onClick={() => onAddChild(selectedTaskId)} className="px-2 py-1 border rounded hover:bg-accent flex items-center gap-1">
+          <button onClick={() => onAddChild(selectedTaskId ? templateIdOf(selectedTaskId) : null)} className="px-2 py-1 border rounded hover:bg-accent flex items-center gap-1">
             <Plus className="h-3 w-3" />{t('gantt.addChild', { defaultValue: '新增下级' })}
           </button>
           <button onClick={onOpenExcel} className="px-2 py-1 border rounded hover:bg-accent">
@@ -176,7 +240,20 @@ export const GanttView: React.FC<GanttViewProps> = ({
         </div>
       </div>
 
-      {/* Scrollable chart */}
+      {/* Scrollable chart — grouped either by flow tree or by physical resource */}
+      {groupBy === 'resource' ? (
+        <ResourceLanes
+          resourceSchedule={resourceSchedule}
+          config={config}
+          pxPerMs={pxPerMs}
+          ticks={ticks}
+          chartWidth={chartWidth}
+          selectedTaskId={selectedTaskId}
+          onSelectTask={setSelectedTask}
+          onJumpToFlow={id => { setSelectedTask(id); setGroupBy('flow') }}
+          onManageResources={onManageResources}
+        />
+      ) : (
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto">
         <div className="flex" style={{ width: LABEL_WIDTH + chartWidth, minHeight: HEADER_HEIGHT + bodyHeight }}>
           {/* Sticky label column */}
@@ -199,7 +276,8 @@ export const GanttView: React.FC<GanttViewProps> = ({
                 dimmed={Boolean(chain && !chain.has(row.task.id))}
                 label={label(row.task.kind)}
                 onSelect={id => setSelectedTask(id)}
-                onEdit={onEditTask}
+                onEdit={id => onEditTask(templateIdOf(id))}
+                showCycle={expanded}
                 onToggle={() => toggleCollapsed(row.task.id)}
               />
             ))}
@@ -219,6 +297,15 @@ export const GanttView: React.FC<GanttViewProps> = ({
                   </g>
                 )
               })}
+              {expanded && expansion.boundaries.slice(1, -1).map(ms => (
+                <g key={`cb${ms}`}>
+                  <line x1={ms * pxPerMs} y1={0} x2={ms * pxPerMs} y2={HEADER_HEIGHT}
+                    stroke="#8b5cf6" strokeWidth={1.5} strokeDasharray="4 3" />
+                  <text x={ms * pxPerMs + 4} y={13} fontSize={10} fill="#7c3aed" fontWeight="bold">
+                    {`C${Math.round(ms / cycleCfg.cycleMs) + 1}`}
+                  </text>
+                </g>
+              ))}
             </svg>
             <svg
               width={chartWidth}
@@ -236,6 +323,16 @@ export const GanttView: React.FC<GanttViewProps> = ({
               {ticks.map(ms => (
                 <line key={`g${ms}`} x1={ms * pxPerMs} y1={0} x2={ms * pxPerMs} y2={bodyHeight}
                   stroke="currentColor" strokeOpacity={0.09} />
+              ))}
+              {expanded && expansion.boundaries.slice(1, -1).map(ms => (
+                <g key={`cbb${ms}`}>
+                  <line x1={ms * pxPerMs} y1={0} x2={ms * pxPerMs} y2={bodyHeight}
+                    stroke="#8b5cf6" strokeWidth={1.5} strokeOpacity={0.55} strokeDasharray="5 4" />
+                  <rect x={ms * pxPerMs + 2} y={4} width={26} height={15} rx={3} fill="#8b5cf6" fillOpacity={0.18} />
+                  <text x={ms * pxPerMs + 5} y={15} fontSize={10} fill="#7c3aed" fontWeight="bold">
+                    {`C${Math.round(ms / cycleCfg.cycleMs) + 1}`}
+                  </text>
+                </g>
               ))}
               {rows.map((r, i) => (
                 <line key={`h${r.task.id}`} x1={0} y1={(i + 1) * rowHeight} x2={chartWidth} y2={(i + 1) * rowHeight}
@@ -263,13 +360,14 @@ export const GanttView: React.FC<GanttViewProps> = ({
                 const dimmed = Boolean(chain && !chain.has(task.id))
                 const color = task.module.color || '#3b82f6'
                 const isHover = hovered === task.id
+                const taskConflicts = resourceSchedule.conflicts.filter(c => c.a.task.id === task.id || c.b.task.id === task.id)
                 return (
                   <g key={task.id} opacity={dimmed ? 0.28 : 1}
                     onMouseEnter={() => setHovered(task.id)}
                     onClick={() => setSelectedTask(task.id)}
-                    onDoubleClick={() => onEditTask(task.id)}
+                    onDoubleClick={() => onEditTask(templateIdOf(task.id))}
                     style={{ cursor: 'pointer' }}>
-                    <title>{`${task.code} ${task.module.actionDescription}\n${task.startMs} → ${task.endMs} ms (${task.durationMs} ms)`}</title>
+                    <title>{`${task.code} ${task.module.actionDescription}\n${task.startMs} → ${task.endMs} ms (${task.durationMs} ms)${taskConflicts.length ? `\n⚠ ${taskConflicts.length} ${t('resource.conflicts', { defaultValue: '处资源冲突' })}: ${taskConflicts.map(c => c.resourceName).join(', ')}` : ''}`}</title>
                     {task.isSummary ? (
                       <>
                         <rect x={x} y={y + barH * 0.28} width={w} height={barH * 0.44}
@@ -292,6 +390,14 @@ export const GanttView: React.FC<GanttViewProps> = ({
                           </text>
                         )}
                       </>
+                    )}
+                    {/* resource conflict badge */}
+                    {!task.isSummary && taskConflicts.length > 0 && (
+                      <g>
+                        <title>{`⚠ ${taskConflicts.map(c => `${c.resourceName} ${c.overlapMs}ms`).join('；')}`}</title>
+                        <path d={`M ${x - 11} ${y - 2} L ${x - 1} ${y - 2} L ${x - 6} ${y + 8} Z`} fill="#ef4444" />
+                        <text x={x - 6} y={y + 7} textAnchor="middle" fontSize={9} fill="#ffffff" style={{ pointerEvents: 'none' }}>!</text>
+                      </g>
                     )}
                     {/* parent bracket spanning all descendants */}
                     {showSummaries && task.childIds.length > 0 && !task.isSummary &&
@@ -319,6 +425,8 @@ export const GanttView: React.FC<GanttViewProps> = ({
           </div>
         </div>
       </div>
+      )}
+      <CycleDialog isOpen={cycleDialogOpen} onClose={() => setCycleDialogOpen(false)} />
     </div>
   )
 }
@@ -330,13 +438,14 @@ interface GanttLabelRowProps {
   selected: boolean
   dimmed: boolean
   label: string
+  showCycle: boolean
   onSelect: (id: string) => void
   onEdit: (id: string) => void
   onToggle: () => void
 }
 
 const GanttLabelRow: React.FC<GanttLabelRowProps> = ({
-  row, index, height, selected, dimmed, label, onSelect, onEdit, onToggle
+  row, index, height, selected, dimmed, label, showCycle, onSelect, onEdit, onToggle
 }) => {
   const { task, depth, hasChildren, collapsed } = row
   return (
@@ -353,6 +462,11 @@ const GanttLabelRow: React.FC<GanttLabelRowProps> = ({
         </button>
       ) : <span className="w-5" />}
       <span className="font-mono text-[10px] text-muted-foreground w-8 flex-shrink-0">{task.code}</span>
+      {showCycle && task.module.cycleIndex ? (
+        <span className="px-1 rounded bg-violet-500/15 text-violet-500 border border-violet-500/30 text-[9px] flex-shrink-0">
+          C{task.module.cycleIndex}
+        </span>
+      ) : null}
       <span className={`px-1 border rounded text-[9px] flex-shrink-0 ${KIND_STYLE[task.kind]}`}>{label}</span>
       <span className="truncate flex-1 font-medium" title={task.module.actionDescription}>
         {task.module.actionDescription}

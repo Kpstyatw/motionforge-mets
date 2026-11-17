@@ -71,7 +71,8 @@
   },
   "toolbar": {
     "importCSV": "导入CSV",
-    "importSuccess": "已导入 {{count}} 条数据"
+    "importSuccess": "已导入 {{count}} 条数据",
+    "importFile": "导入 CSV / Excel (Ctrl+I)"
   },
   "timeline": {
     "play": "播放",
@@ -116,7 +117,8 @@
     "invalidFormat": "文件格式无效",
     "importFailed": "导入失败",
     "exportFailed": "导出失败",
-    "unknown": "未知错误"
+    "unknown": "未知错误",
+    "unsupportedFile": "请选择 .csv 或 .xlsx 文件"
   },
   "settings": {
     "title": "设置",
@@ -380,7 +382,11 @@
     "nodeKind": "节点类型",
     "nestHint": "子动作可作为另一个子动作的上级，层数不限。",
     "parent": "上级",
-    "rootHint": "将创建顶层模块"
+    "rootHint": "将创建顶层模块",
+    "groupFlow": "流程",
+    "groupFlowTip": "按模块/机构/动作层级查看流程",
+    "groupResource": "资源",
+    "groupResourceTip": "按机构/电机查看占用与冲突"
   },
   "timeScale": {
     "title": "时间刻度与精度",
@@ -416,5 +422,57 @@
     "importFailed": "Excel 导入失败",
     "imported": "已导入 {{count}} 行并按依赖重新排程；甘特图与表格已同步。",
     "importOk": "Excel 已导入"
+  },
+  "resource": {
+    "title": "资源",
+    "managerTitle": "资源管理（机构 / 电机）",
+    "managerHint": "资源只定义一次，供所有流程的动作共用。在任务的「资源占用」里引用它们，无需在各流程重复新建机构。",
+    "nameLabel": "名称",
+    "type": "类型",
+    "uses": "处引用",
+    "add": "添加",
+    "new": "新建",
+    "newName": "新资源名称（如 管库抓手）",
+    "remove": "删除资源",
+    "emptyShort": "暂无资源",
+    "laneHeader": "资源泳道",
+    "manage": "管理资源",
+    "claims": "占用",
+    "busy": "忙碌",
+    "conflicts": "处冲突",
+    "empty": "暂无资源。点击 + 添加机构/电机，再为动作设置占用。",
+    "conflictHint": "红色为资源占用冲突（仅提示，不自动改时序）。点击冲突块可跳到对应动作。",
+    "allocTitle": "资源占用",
+    "allocSection": "资源占用",
+    "allocSectionHint": "精确窗口，重叠会提示",
+    "editAlloc": "编辑占用",
+    "allocHint": "占用窗口相对本动作开始时间。动作被依赖顺延时，占用窗口自动跟随。同一资源窗口重叠会在资源视图标红（仅提示）。",
+    "taskDuration": "动作时长",
+    "offset": "偏移",
+    "duration": "时长",
+    "removeClaim": "删除占用",
+    "addClaim": "添加占用",
+    "selectResource": "资源",
+    "newResource": "新建资源",
+    "noResource": "（无资源，请先新建）",
+    "needResource": "请先添加一个资源",
+    "invalidNumber": "偏移与时长必须是数字",
+    "zeroDuration": "占用时长必须大于 0（且在动作时长内）"
+  },
+  "cycle": {
+    "title": "固定周期设置",
+    "enable": "启用多周期展开",
+    "hint": "底层只保存一份动作模板；展开后每个周期是只读实例，编辑任一实例都会同步回模板。",
+    "length": "周期时长 (ms)",
+    "repeats": "展开周期数",
+    "singleTotal": "单周期实际节拍",
+    "projectedTotal": "展开后总时间轴",
+    "overrun": "个动作超出周期边界，跨周期资源冲突会在资源视图标红",
+    "within": "所有动作均在周期内完成",
+    "single": "单周期",
+    "singleTip": "只显示一份动作模板，可直接编辑",
+    "multi": "多周期",
+    "multiTip": "按固定周期展开多个只读实例",
+    "settings": "周期时长与数量"
   }
 }

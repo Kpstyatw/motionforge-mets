@@ -6,13 +6,14 @@ import { computeSchedule, wouldCreateCycle } from '@/lib/dependencyEngine'
 import { normalizeTimeConfig, parseTimeInput, quantize, describeDuration } from '@/lib/timeScale'
 import { DependencyType, TaskKind } from '@/types'
 import { toast } from '@/components/ui/use-toast'
-import { Plus, Trash2, Link2, GitBranch } from 'lucide-react'
+import { Plus, Trash2, Link2, GitBranch, Boxes } from 'lucide-react'
 
 /** Editor for one action / sub-action (or a summary node). */
 interface TaskEditorDialogProps {
   taskId: string | null
   onClose: () => void
   onAddChild: (parentId: string) => void
+  onEditAllocations?: (taskId: string) => void
 }
 
 const KIND_LABEL: Record<TaskKind, string> = {
@@ -23,7 +24,7 @@ const TYPE_HINT: Record<DependencyType, string> = {
   FS: '完成→开始', SS: '开始→开始', FF: '完成→完成', SF: '开始→完成'
 }
 
-export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onClose, onAddChild }) => {
+export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onClose, onAddChild, onEditAllocations }) => {
   const { t } = useTranslation()
   const {
     project, setTaskTiming, setStartMode, addPredecessor, updatePredecessor,
@@ -272,6 +273,23 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
               <Plus className="h-3.5 w-3.5" />{t('gantt.addChild', { defaultValue: '新增下级' })}
             </button>
           </section>
+
+          {/* resource allocation */}
+          {!task.isSummary && (
+            <section className="border rounded-lg p-3 flex items-center justify-between">
+              <div className="text-xs">
+                <div className="font-semibold mb-1 flex items-center gap-1"><Boxes className="h-3.5 w-3.5" />{t('resource.allocSection', { defaultValue: '资源占用' })}</div>
+                <div className="text-muted-foreground">
+                  {project.allocations.filter(a => a.taskId === task.id).length} {t('resource.claims', { defaultValue: '条占用' })}
+                  {' · '}{t('resource.allocSectionHint', { defaultValue: '精确窗口，重叠会提示' })}
+                </div>
+              </div>
+              <button onClick={() => onEditAllocations?.(task.id)}
+                className="px-3 py-1.5 text-xs border rounded hover:bg-accent flex items-center gap-1">
+                <Boxes className="h-3.5 w-3.5" />{t('resource.editAlloc', { defaultValue: '编辑占用' })}
+              </button>
+            </section>
+          )}
         </div>
 
         <div className="flex items-center justify-between px-5 py-3 border-t">

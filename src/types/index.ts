@@ -69,6 +69,12 @@ export interface ModuleData {
   /** Incoming dependency edges. Outgoing edges are derived by scanning all rows. */
   predecessors?: Dependency[]
 
+  // ---- cycle instance projection (derived, never authored) ----
+  /** 1..N when this row is a generated cycle instance; absent on the template. */
+  cycleIndex?: number
+  /** Template row id when this row is a generated cycle instance. */
+  cycleTemplateId?: string
+
   // ---- legacy fields, kept for CSV + classic grid compatibility ----
   startX: number
   calculatedStartX?: number
@@ -77,6 +83,44 @@ export interface ModuleData {
   stage?: string
   color?: string
   isSequentialAction?: boolean
+}
+
+/**
+ * A physical resource shared across flows: a mechanism / motor / actuator such
+ * as 管库抓手, 样本臂, 加样针. Resources live in a global table — they are NOT
+ * nodes in the flow hierarchy — so one resource is defined once and referenced
+ * by many actions in many flows. This is what removes the duplicate-editing
+ * problem of a resource-centric tree.
+ */
+export interface Resource {
+  id: string
+  name: string
+  /** Free-form category: gripper / arm / needle / motor / incubator ... */
+  type?: string
+  color?: string
+  notes?: string
+}
+
+/**
+ * A claim by one action on one resource, with an exact time window.
+ * `offsetMs` is relative to the owning action's resolved start, and `durationMs`
+ * is the length of the claim — so when the dependency engine cascades the
+ * action to a new start, every claim on it moves with it automatically.
+ * Absolute window = [task.startMs + offsetMs, task.startMs + offsetMs + durationMs).
+ *
+ * This is the "关系" entity of the many-to-many relation: one action may hold
+ * several allocations (gripper + arm + needle cooperating), and one resource
+ * may be claimed by many actions across different flows.
+ */
+export interface ResourceAllocation {
+  id: string
+  taskId: string
+  resourceId: string
+  /** Offset from the owning action's start, integer ms, >= 0. */
+  offsetMs: number
+  /** Length of the claim, integer ms, >= 0. */
+  durationMs: number
+  notes?: string
 }
 
 /** Configurable time scale / precision. Stored with the project. */
@@ -93,6 +137,16 @@ export interface TimeConfig {
   precisionMs: number
   /** How ruler labels are rendered. */
   displayUnit: 'ms' | 's' | 'min'
+}
+
+/** Fixed-period repetition. The template is authored once and projected N times. */
+export interface CycleConfig {
+  /** false / repeats=1 → single-cycle view; true → multi-cycle projection. */
+  enabled: boolean
+  /** Length of one cycle in integer milliseconds. */
+  cycleMs: number
+  /** Number of cycles to project, 1..50. */
+  repeats: number
 }
 
 /** Cell geometry for the Excel sheets ("单元格尺寸可自定义"). */
@@ -148,6 +202,10 @@ export interface AnimationState {
 export interface ProjectData {
   name: string
   modules: ModuleData[]
+  /** Global resource catalogue (mechanisms / motors / actuators). */
+  resources: Resource[]
+  /** Exact-window claims linking actions to resources. */
+  allocations: ResourceAllocation[]
   canvasConfig: CanvasConfig
   createdAt: string
   updatedAt: string
@@ -155,6 +213,8 @@ export interface ProjectData {
   /** 2 = Gantt edition schema. Missing on projects imported from upstream. */
   schemaVersion?: number
   timeConfig: TimeConfig
+  /** Fixed-cycle repetition; absent means single-cycle (legacy projects). */
+  cycleConfig?: CycleConfig
   excelLayout: ExcelLayoutConfig
   ganttConfig: GanttConfig
 }

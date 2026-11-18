@@ -7,6 +7,8 @@
     "file": {
       "title": "文件",
       "import": "导入CSV",
+      "save": "保存",
+      "saveAs": "另存为",
       "export": {
         "title": "导出",
         "csv": "导出为CSV",
@@ -481,5 +483,10 @@
     "multi": "多周期",
     "multiTip": "按固定周期展开多个只读实例",
     "settings": "周期时长与数量"
+  },
+  "save": {
+    "ok": "已保存",
+    "failed": "保存失败",
+    "empty": "暂无数据可保存"
   }
 }

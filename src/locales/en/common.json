@@ -7,6 +7,8 @@
     "file": {
       "title": "File",
       "import": "Import CSV",
+      "save": "Save",
+      "saveAs": "Save As",
       "export": {
         "title": "Export",
         "csv": "Export as CSV",
@@ -481,5 +483,10 @@
     "multi": "Multi",
     "multiTip": "Project several read-only cycles",
     "settings": "Cycle length and count"
+  },
+  "save": {
+    "ok": "Saved",
+    "failed": "Save failed",
+    "empty": "Nothing to save yet"
   }
 }

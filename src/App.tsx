@@ -3,12 +3,13 @@ import { useTranslation } from 'react-i18next'
 import { Toaster } from '@/components/ui/toaster'
 import { LanguageSelector } from '@/components/LanguageSelector'
 import { useCSVImport } from '@/hooks/useCSVImport'
+import { useSaveProject } from '@/hooks/useSaveProject'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { FRAME_STEP_MS, useAnimationStore } from '@/stores/useAnimationStore'
 import { useHistoryStore } from '@/stores/useHistoryStore'
 import { GridCanvas } from '@/components/Canvas/GridCanvas'
 import { ParameterTable } from '@/components/ParameterTable'
-import { FaPlay, FaPause, FaStop, FaRedo, FaCog, FaDownload } from 'react-icons/fa'
+import { FaPlay, FaPause, FaStop, FaRedo, FaCog, FaDownload, FaSave } from 'react-icons/fa'
 import { ZoomIn, ZoomOut, Maximize, LocateFixed, FileUp, Loader2, Clock3, Table2, LayoutGrid, GanttChartSquare } from 'lucide-react'
 import { useUIStore, MAX_ZOOM, MIN_ZOOM } from '@/stores/useUIStore'
 import { computeContentSize } from '@/lib/canvasRenderer'
@@ -46,6 +47,7 @@ import {
 function App() {
   const { t } = useTranslation()
   const { handleImport, importCSVText, isImporting } = useCSVImport()
+  const { save: saveProject, saveAs: saveProjectAs } = useSaveProject()
   // Online edition: opened from a share link (shows the footer prompt).
   const [sharedMode, setSharedMode] = useState(false)
   const { project, createNewProject, updateModules } = useProjectStore()
@@ -228,6 +230,8 @@ function App() {
   // menu, the keys and the help dialog cannot disagree.
   const commands: Record<string, () => void> = {
     'import-csv': () => { if (!isImporting) handleImport() },
+    save: () => saveProject(),
+    'save-as': () => saveProjectAs(),
     export: () => { if (project && project.modules.length > 0) setExportOpen(true) },
     undo: handleUndo,
     redo: handleRedo,
@@ -354,6 +358,15 @@ function App() {
                   {isImporting
                     ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     : <FileUp className="h-3.5 w-3.5" />}
+                </TooltipButton>
+                <TooltipButton
+                  className="p-2 text-sm border rounded hover:bg-accent disabled:opacity-50 transition-colors"
+                  onClick={() => saveProject()}
+                  disabled={!project || project.modules.length === 0}
+                  tooltip={t('menu.file.save', { defaultValue: '保存 (Ctrl+S)' })}
+                  aria-label={t('menu.file.save', { defaultValue: '保存' })}
+                >
+                  <FaSave />
                 </TooltipButton>
                 <TooltipButton
                   className="p-2 text-sm border rounded hover:bg-accent disabled:opacity-50 transition-colors"

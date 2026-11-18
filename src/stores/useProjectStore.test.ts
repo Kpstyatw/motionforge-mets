@@ -113,3 +113,19 @@ describe('hierarchy presentation', () => {
     expect(modules.find(m => m.id === 'A')!.color).toBe('#00ff00')
   })
 })
+
+describe('source file association for one-click save', () => {
+  it('remembers the imported workbook and clears it only on a new project', () => {
+    load([mk('A', 0, 100)])
+    useProjectStore.getState().setSourceFile({ path: 'C:\\plan\\cycle.xlsx', name: 'cycle.xlsx', kind: 'xlsx' })
+    expect(useProjectStore.getState().sourceFile?.path).toBe('C:\\plan\\cycle.xlsx')
+
+    // Re-loading project data (as an Excel import does) must keep the path.
+    load([mk('B', 0, 200)])
+    expect(useProjectStore.getState().sourceFile?.name).toBe('cycle.xlsx')
+
+    // Starting a brand-new project drops the stale association.
+    useProjectStore.getState().createNewProject()
+    expect(useProjectStore.getState().sourceFile).toBeNull()
+  })
+})

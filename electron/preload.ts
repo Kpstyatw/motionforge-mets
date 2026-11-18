@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
   readFileBinary: (filePath: string) => ipcRenderer.invoke('fs:readFileBinary', filePath),
   writeFile: (filePath: string, data: string) => ipcRenderer.invoke('fs:writeFile', filePath, data),
+  writeFileBinary: (filePath: string, base64: string) => ipcRenderer.invoke('fs:writeFileBinary', filePath, base64),
   
   // Application controls
   minimize: () => ipcRenderer.send('window:minimize'),
@@ -56,6 +57,7 @@ declare global {
       readFile: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>
       readFileBinary: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>
       writeFile: (filePath: string, data: string) => Promise<{ success: boolean; error?: string }>
+      writeFileBinary: (filePath: string, base64: string) => Promise<{ success: boolean; error?: string }>
       minimize: () => void
       maximize: () => void
       close: () => void

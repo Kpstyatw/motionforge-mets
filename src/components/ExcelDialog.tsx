@@ -29,7 +29,7 @@ const COLUMN_LABELS: Array<[keyof ExcelLayoutConfig['columnWidths'] | string, st
 
 export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => {
   const { t } = useTranslation()
-  const { project, setExcelLayout, loadProject } = useProjectStore()
+  const { project, setExcelLayout, loadProject, setSourceFile } = useProjectStore()
   const { collapsedTaskIds } = useUIStore()
   const fileRef = useRef<HTMLInputElement>(null)
   const [layout, setLayout] = useState<ExcelLayoutConfig | null>(null)
@@ -140,6 +140,7 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
         cycleConfig: result.cycleConfig,
         excelLayout: result.excelLayout
       })
+      setSourceFile({ name: file.name, kind: /\.csv$/i.test(file.name) ? 'csv' : 'xlsx' })
       setLayout({ ...result.excelLayout!, columnWidths: { ...result.excelLayout!.columnWidths } })
       const nextWarnings = result.warnings ?? []
       setHasIssue(nextWarnings.length > 0)

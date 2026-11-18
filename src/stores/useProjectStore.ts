@@ -113,12 +113,24 @@ interface TimingPatch {
   endMs?: number
 }
 
+/** Where the current project came from, so Ctrl+S can write back to it. */
+export interface SourceFile {
+  /** Absolute path on disk (desktop only); absent for web imports. */
+  path?: string
+  /** Display name, e.g. "plan.xlsx". */
+  name: string
+  kind: 'xlsx' | 'csv'
+}
+
 interface ProjectState {
   project: ProjectData | null
   unsavedChanges: boolean
   /** Diagnostics from the last dependency pass (cycles, dangling edges). */
   scheduleWarnings: string[]
+  /** Source workbook/CSV for one-click save-back; cleared on new project. */
+  sourceFile: SourceFile | null
 
+  setSourceFile: (source: SourceFile | null) => void
   createNewProject: () => void
   loadProject: (project: Partial<ProjectData>) => void
   updateModules: (modules: ModuleData[], skipHistory?: boolean) => void
@@ -202,23 +214,29 @@ function commit(
 
 export const useProjectStore = create<ProjectState>()(
   immer((set, get) => ({
-    project: null,
-    unsavedChanges: false,
-    scheduleWarnings: [],
+  project: null,
+  unsavedChanges: false,
+  scheduleWarnings: [],
+  sourceFile: null,
 
-    createNewProject: () => set(state => {
-      state.project = freshProject()
-      state.unsavedChanges = false
-      state.scheduleWarnings = []
-      useHistoryStore.getState().clearHistory()
-    }),
+  setSourceFile: source => set(state => { state.sourceFile = source }),
 
-    loadProject: project => set(state => {
-      state.project = migrateProject(project)
-      state.unsavedChanges = false
-      state.scheduleWarnings = []
-      useHistoryStore.getState().clearHistory()
-    }),
+  createNewProject: () => set(state => {
+    state.project = freshProject()
+    state.unsavedChanges = false
+    state.scheduleWarnings = []
+    state.sourceFile = null
+    useHistoryStore.getState().clearHistory()
+  }),
+
+  loadProject: project => set(state => {
+    state.project = migrateProject(project)
+    state.unsavedChanges = false
+    state.scheduleWarnings = []
+    // sourceFile is owned by the import/save flow, not by project data, so a
+    // reload (e.g. Excel import) keeps the association until explicitly changed.
+    useHistoryStore.getState().clearHistory()
+  }),
 
     updateModules: (modules, skipHistory = false) => set(state => {
       commit(state, modules, skipHistory)
@@ -253,6 +271,7 @@ export const useProjectStore = create<ProjectState>()(
       state.project = null
       state.unsavedChanges = false
       state.scheduleWarnings = []
+      state.sourceFile = null
     }),
 
     setTimeConfig: config => set(state => {

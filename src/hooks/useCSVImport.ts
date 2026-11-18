@@ -17,7 +17,7 @@ import { base64ToBytes } from '@/lib/binary'
 export function useCSVImport() {
   const { t } = useTranslation()
   const [isImporting, setIsImporting] = useState(false)
-  const { updateModules, createNewProject, loadProject, project, setTimeConfig } = useProjectStore()
+  const { updateModules, createNewProject, loadProject, project, setTimeConfig, setSourceFile } = useProjectStore()
 
   /** Pick a file: native Electron dialog or a web <input>, both accepting CSV + Excel. */
   const handleImport = async () => {
@@ -27,7 +27,7 @@ export function useCSVImport() {
       input.accept = '.csv,.xlsx,.xlsm'
       input.onchange = async (e) => {
         const file = (e.target as HTMLInputElement).files?.[0]
-        if (file) await processFile(file)
+        if (file) await processFile(file, { name: file.name, kind: /\.(xlsx|xlsm)$/i.test(file.name) ? 'xlsx' : 'csv' })
       }
       input.click()
     } else {
@@ -49,7 +49,7 @@ export function useCSVImport() {
             const type = isExcel
               ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
               : 'text/csv'
-            await processFile(new File([payload], name, { type }))
+            await processFile(new File([payload], name, { type }), { path: filePath, name, kind: isExcel ? 'xlsx' : 'csv' })
           } else {
             toast({ variant: 'destructive', title: t('error.fileNotFound'), description: fileResult.error })
           }
@@ -64,17 +64,19 @@ export function useCSVImport() {
     }
   }
 
-  const processFile = async (file: File) => {
+  type SourceInfo = { path?: string; name: string; kind: 'xlsx' | 'csv' }
+
+  const processFile = async (file: File, source?: SourceInfo) => {
     const name = file.name.toLowerCase()
-    if (name.endsWith('.xlsx') || name.endsWith('.xlsm')) await processExcelFile(file)
-    else if (name.endsWith('.csv')) await processCSVFile(file)
+    if (name.endsWith('.xlsx') || name.endsWith('.xlsm')) await processExcelFile(file, source)
+    else if (name.endsWith('.csv')) await processCSVFile(file, source)
     else toast({
       variant: 'destructive', title: t('error.invalidFormat'),
       description: t('error.unsupportedFile', { defaultValue: '请选择 .csv 或 .xlsx 文件' })
     })
   }
 
-  const processCSVFile = async (file: File) => {
+  const processCSVFile = async (file: File, source?: SourceInfo) => {
     setIsImporting(true)
     try {
       const result = await importCSVFile(file)
@@ -89,6 +91,7 @@ export function useCSVImport() {
         // values snap to the right quantum.
         if (result.timeConfig) setTimeConfig(result.timeConfig)
         updateModules(result.data)
+        setSourceFile(source ?? { name: file.name, kind: 'csv' })
         toast({
           title: t('toolbar.importCSV'),
           description: t('toolbar.importSuccess', { count: result.data.length })
@@ -112,7 +115,7 @@ export function useCSVImport() {
     }
   }
 
-  const processExcelFile = async (file: File) => {
+  const processExcelFile = async (file: File, source?: SourceInfo) => {
     setIsImporting(true)
     try {
       // ExcelJS is heavy — load only when a workbook is actually imported.
@@ -140,6 +143,7 @@ export function useCSVImport() {
         cycleConfig: result.cycleConfig,
         excelLayout: result.excelLayout
       })
+      setSourceFile(source ?? { name: file.name, kind: 'xlsx' })
       toast({
         title: t('excel.importOk', { defaultValue: 'Excel 已导入' }),
         description: t('toolbar.importSuccess', { count: result.modules.length }) +

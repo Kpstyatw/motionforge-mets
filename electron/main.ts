@@ -304,6 +304,17 @@ ipcMain.handle('fs:writeFile', async (_, filePath: string, data: string) => {
   }
 })
 
+// Binary counterpart for saving .xlsx: the renderer hands us base64 bytes so
+// the zip archive is written verbatim instead of being mangled by UTF-8.
+ipcMain.handle('fs:writeFileBinary', async (_, filePath: string, base64: string) => {
+  try {
+    await writeFile(filePath, Buffer.from(base64, 'base64'))
+    return { success: true }
+  } catch (error: any) {
+    return { success: false, error: error.message }
+  }
+})
+
 // Window control operations
 ipcMain.on('window:minimize', () => {
   mainWindow?.minimize()

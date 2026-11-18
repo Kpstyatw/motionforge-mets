@@ -7,6 +7,8 @@
     "file": {
       "title": "檔案",
       "import": "匯入CSV",
+      "save": "儲存",
+      "saveAs": "另存新檔",
       "export": {
         "title": "匯出",
         "csv": "匯出為CSV",
@@ -481,5 +483,10 @@
     "multi": "多週期",
     "multiTip": "按固定週期展開多個唯讀實例",
     "settings": "週期時長與數量"
+  },
+  "save": {
+    "ok": "已儲存",
+    "failed": "儲存失敗",
+    "empty": "暫無資料可儲存"
   }
 }

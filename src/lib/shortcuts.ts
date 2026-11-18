@@ -56,6 +56,22 @@ export const SHORTCUTS: ShortcutDef[] = [
     bindings: [{ key: 'i', ctrl: true }]
   },
   {
+    command: 'save',
+    labelKey: 'menu.file.save',
+    category: 'file',
+    keys: 'Ctrl+S',
+    accelerator: 'CmdOrCtrl+S',
+    bindings: [{ key: 's', ctrl: true }]
+  },
+  {
+    command: 'save-as',
+    labelKey: 'menu.file.saveAs',
+    category: 'file',
+    keys: 'Ctrl+Shift+S',
+    accelerator: 'CmdOrCtrl+Shift+S',
+    bindings: [{ key: 's', ctrl: true, shift: true }]
+  },
+  {
     command: 'export',
     labelKey: 'menu.file.export.title',
     category: 'file',

@@ -198,7 +198,13 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
               <div><label className={labelClass}>{t('excel.matrixStep', { defaultValue: '矩阵列跨度 (ms, 0=自动)' })}</label>
                 <input className={inputClass} type="number" min={0} value={layout.matrixStepMs}
                   onChange={e => setNumber('matrixStepMs', e.target.value)} /></div>
+              <div><label className={labelClass}>{t('excel.matrixLabelEvery', { defaultValue: '表头时间合并 (刻度数)' })}</label>
+                <input className={inputClass} type="number" min={0} max={60} value={layout.matrixLabelEvery ?? 0}
+                  onChange={e => setNumber('matrixLabelEvery', e.target.value)} /></div>
             </div>
+            <p className="text-[11px] text-muted-foreground mt-2">
+              {t('excel.matrixLabelEveryHint', { defaultValue: '设为 N 时，甘特矩阵表头每 N 个刻度合并成一格并显示该段时间（如 0ms–400ms）；0 表示不合并，仅稀疏标注。数据行的条形始终按单刻度绘制，保持时间精度。' })}
+            </p>
             <div className="mt-3">
               <div className={labelClass}>{t('excel.columnWidths', { defaultValue: '各列宽度（字符）' })}</div>
               <div className="grid grid-cols-4 gap-2">

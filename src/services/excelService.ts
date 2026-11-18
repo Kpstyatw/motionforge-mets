@@ -168,11 +168,17 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
   const bucketCount = Math.min(MATRIX_MAX_COLUMNS, Math.max(1, Math.ceil((schedule.totalMs + stepMs) / stepMs)))
 
   // A bucket is only a few characters wide, so printing a time label above
-  // every one wraps "100ms" into a vertical stack. Label every N-th bucket
-  // instead, with enough empty buckets between labels to fit the text.
+  // every one wraps "100ms" into a vertical stack. Two strategies:
+  //   - matrixLabelEvery > 0: merge every N header cells into one labelled cell
+  //     showing that span (the data rows stay one cell per tick, preserving
+  //     bar precision).
+  //   - otherwise: sparse labels, one every N columns based on column width.
   const longestLabel = formatTime(schedule.totalMs, config)
   const labelChars = Math.max(4, longestLabel.length + 1)
-  const labelEvery = Math.max(1, Math.ceil(labelChars / Math.max(1, layout.matrixCellWidth)) + 1)
+  const mergeEvery = Math.max(0, Math.round(layout.matrixLabelEvery ?? 0))
+  const labelEvery = mergeEvery > 0
+    ? mergeEvery
+    : Math.max(1, Math.ceil(labelChars / Math.max(1, layout.matrixCellWidth)) + 1)
 
   // Left columns carry the hierarchy: 类型 marks 模块 / 机构 / 动作 / 子动作,
   // and the name is indented by tree depth so containment is visible at a glance.
@@ -184,10 +190,31 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
   matrix.columns = headerValues.map((header, i) => ({
     header,
     key: i === 0 ? 'code' : i === 1 ? 'kind' : i === 2 ? 'action' : `t${i}`,
-    width: i === 0 ? 12 : i === 1 ? 12 : i === 2 ? 30 : layout.matrixCellWidth
+    width: i === 0 ? (layout.columnWidths.code ?? 14) : i === 1 ? 12 : i === 2 ? 30 : layout.matrixCellWidth
   }))
   styleHeader(matrix, 1, headerValues.length, layout)
   matrix.getRow(1).height = layout.headerHeight
+
+  // Merge the header time cells into N-tick groups. Each merged cell spells out
+  // the time span it covers, e.g. "0ms–400ms" for N=4 at 100ms/tick. Only the
+  // header row is merged; action bars below remain per-tick so timing stays exact.
+  if (mergeEvery > 1) {
+    const lastTimeCol = LEFT_COLS + bucketCount
+    for (let start = LEFT_COLS + 1; start <= lastTimeCol; start += mergeEvery) {
+      const end = Math.min(start + mergeEvery - 1, lastTimeCol)
+      const firstTick = start - (LEFT_COLS + 1)
+      const lastTick = end - (LEFT_COLS + 1)
+      const from = firstTick * stepMs
+      const to = Math.min(schedule.totalMs, (lastTick + 1) * stepMs)
+      const label = firstTick === lastTick
+        ? formatTime(from, config)
+        : `${formatTime(from, config)}–${formatTime(to, config)}`
+      // Clear sparse labels that landed inside the block, then merge.
+      for (let c = start + 1; c <= end; c++) matrix.getCell(1, c).value = null
+      matrix.getCell(1, start).value = label
+      if (end > start) matrix.mergeCells(1, start, 1, end)
+    }
+  }
 
   tableRows.forEach(r => {
     const isSummary = r.kind === 'module' || r.kind === 'mechanism'
@@ -247,6 +274,7 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
     ['matrixCellWidth', layout.matrixCellWidth],
     ['matrixRowHeight', layout.matrixRowHeight],
     ['matrixStepMs', stepMs],
+    ['matrixLabelEvery', mergeEvery],
     ['fontSize', layout.fontSize],
     ['columnWidths', JSON.stringify(layout.columnWidths)],
     ['totalMs', schedule.totalMs],
@@ -254,6 +282,7 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
   ]
   settings.forEach(([key, value]) => addMeta('设置', key, value))
   addMeta('说明', '甘特矩阵列宽(ms)', stepMs, '', '第 2 页每列代表的时间跨度；精确毫秒见第 1 页')
+  addMeta('说明', '表头时间合并(刻度数)', mergeEvery, '', '表头每 N 个刻度合并为一格并显示该段时间；0=不合并')
   addMeta('说明', '最小精度(ms)', config.precisionMs, '', '所有时刻均为该精度的整数倍')
 
   tableRows.forEach(r => {
@@ -489,6 +518,7 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
         matrixCellWidth: Number(settings.get('matrixCellWidth') ?? excelLayout.matrixCellWidth),
         matrixRowHeight: Number(settings.get('matrixRowHeight') ?? excelLayout.matrixRowHeight),
         matrixStepMs: Number(settings.get('matrixStepMs') ?? 0),
+        matrixLabelEvery: Math.max(0, Math.round(Number(settings.get('matrixLabelEvery') ?? 0))),
         fontSize: Number(settings.get('fontSize') ?? excelLayout.fontSize),
         columnWidths: (() => {
           try { return { ...excelLayout.columnWidths, ...JSON.parse(settings.get('columnWidths') ?? '{}') } }

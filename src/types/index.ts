@@ -163,6 +163,8 @@ export interface ExcelLayoutConfig {
   matrixRowHeight: number
   /** Time span of one matrix column in ms; 0 = derive from scale + column cap. */
   matrixStepMs: number
+  /** Merge every N time-tick columns in the matrix header into one labelled cell; 0 = no merge. */
+  matrixLabelEvery: number
   /** Font size in points. */
   fontSize: number
 }

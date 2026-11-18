@@ -336,6 +336,9 @@
     "taskCount": "Nodes",
     "sideHint": "Click to select, double-click to edit; arrows show the dependency chain.",
     "editSelected": "Edit selected",
+    "color": "Colour",
+    "applyColorToChildren": "Apply to all descendants",
+    "colorHint": "Used by Gantt bars, resource lanes, the Excel colour column and PDF. Tick to apply to the whole subtree; otherwise only this node changes.",
     "kind": {
       "module": "Module",
       "mechanism": "Mechanism",
@@ -423,7 +426,9 @@
     "exportFailed": "Excel export failed",
     "importFailed": "Excel import failed",
     "imported": "Imported {{count}} rows and re-scheduled from dependencies; chart and table are in sync.",
-    "importOk": "Excel imported"
+    "importOk": "Excel imported",
+    "matrixLabelEvery": "Header time merge (ticks)",
+    "matrixLabelEveryHint": "Set to N to merge every N ticks in the Gantt matrix header into one cell showing that span (e.g. 0ms–400ms); 0 = no merge, sparse labels only. Data bars always stay per-tick to keep timing exact."
   },
   "resource": {
     "title": "Resources",

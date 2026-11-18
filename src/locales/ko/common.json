@@ -336,6 +336,9 @@
     "taskCount": "노드 수",
     "sideHint": "클릭하여 선택, 더블 클릭하여 편집. 화살표는 의존 체인입니다.",
     "editSelected": "선택 항목 편집",
+    "color": "색상",
+    "applyColorToChildren": "모든 하위 노드에 적용",
+    "colorHint": "간트 막대, 리소스 레인, Excel 색상 열 및 PDF에 사용됩니다. 선택하면 전체 하위 트리에 적용되고, 선택하지 않으면 현재 노드만 변경됩니다.",
     "kind": {
       "module": "모듈",
       "mechanism": "기구",
@@ -423,7 +426,9 @@
     "exportFailed": "Excel 내보내기 실패",
     "importFailed": "Excel 가져오기 실패",
     "imported": "{{count}}행을 가져와 의존관계로 재배치했으며 차트와 표가 동기화되었습니다.",
-    "importOk": "Excel 가져오기 완료"
+    "importOk": "Excel 가져오기 완료",
+    "matrixLabelEvery": "머리글 시간 병합 (눈금 수)",
+    "matrixLabelEveryHint": "N으로 설정하면 간트 매트릭스 머리글에서 N칸마다 한 셀로 병합하고 해당 구간(예: 0ms–400ms)을 표시합니다. 0이면 병합하지 않고 드문 레이블만 표시합니다. 데이터 행 막대는 항상 눈금 단위로 유지되어 시간 정확도가 보존됩니다."
   },
   "resource": {
     "title": "리소스",

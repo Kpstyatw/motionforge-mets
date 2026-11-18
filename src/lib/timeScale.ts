@@ -29,6 +29,7 @@ export const DEFAULT_EXCEL_LAYOUT: ExcelLayoutConfig = {
   rowHeight: 22,
   headerHeight: 30,
   columnWidths: {
+    code: 14,
     id: 12,
     level: 8,
     module: 20,
@@ -46,6 +47,7 @@ export const DEFAULT_EXCEL_LAYOUT: ExcelLayoutConfig = {
   matrixCellWidth: 3.5,
   matrixRowHeight: 18,
   matrixStepMs: 0,
+  matrixLabelEvery: 0,
   fontSize: 10
 }
 

@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { ModuleData, TaskKind, TimeConfig } from '@/types'
 import {
   collectDescendantIds, computeSchedule, flattenTree, hierarchyPath,
-  syncLegacyFields, wouldCreateCycle
+  renumberHierarchyCodes, syncLegacyFields, wouldCreateCycle
 } from './dependencyEngine'
 import { DEFAULT_TIME_CONFIG, normalizeTimeConfig, parseTimeInput, quantize } from './timeScale'
 import { computeTotalDurationMs } from './timingModel'
@@ -211,6 +211,32 @@ describe('hierarchy 模块 → 机构 → 动作 → 子动作 → ...', () => {
     expect(hierarchyPath(schedule, 'S3')[1]).toBe('Feeder_1')
     expect(hierarchyPath(schedule, 'S3')).toHaveLength(6)
     expect(collectDescendantIds(schedule.tasks.map(t => t.module), 'A')).toEqual(expect.arrayContaining(['S1', 'S2', 'S3']))
+  })
+
+  it('assigns parent-prefixed codes so the number itself shows the hierarchy', () => {
+    const numbered = renumberHierarchyCodes(buildTree())
+    const codes = Object.fromEntries(numbered.map(m => [m.id, m.code]))
+    expect(codes).toEqual({
+      M: '01', K: '01.01', A: '01.01.01',
+      S1: '01.01.01.01', S2: '01.01.01.01.01', S3: '01.01.01.01.01.01'
+    })
+    // The parent code is always the code prefix, including nested sub-actions.
+    numbered.filter(m => m.parentId).forEach(m => {
+      expect(m.code).toMatch(new RegExp(`^${codes[m.parentId!]}\\.\\d+$`))
+    })
+  })
+
+  it('numbers sibling branches in stable tree order', () => {
+    const modules = [
+      { ...task({}), id: 'A', code: 'T9', parentId: null, kind: 'module' as TaskKind },
+      { ...task({}), id: 'B', code: 'T8', parentId: 'A', kind: 'mechanism' as TaskKind },
+      { ...task({}), id: 'C', code: 'T7', parentId: 'A', kind: 'mechanism' as TaskKind },
+      { ...task({}), id: 'D', code: 'T6', parentId: 'B' },
+      { ...task({}), id: 'E', code: 'T5', parentId: null, kind: 'module' as TaskKind }
+    ]
+    expect(Object.fromEntries(renumberHierarchyCodes(modules).map(m => [m.id, m.code]))).toEqual({
+      A: '01', B: '01.01', C: '01.02', D: '01.01.01', E: '02'
+    })
   })
 
   it('sub-actions nest to arbitrary depth and can be hidden by collapsing any ancestor', () => {

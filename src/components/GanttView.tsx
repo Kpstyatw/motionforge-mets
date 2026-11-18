@@ -476,7 +476,9 @@ const GanttLabelRow: React.FC<GanttLabelRowProps> = ({
           {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
       ) : <span className="w-5" />}
-      <span className="font-mono text-[10px] text-muted-foreground w-8 flex-shrink-0">{task.code}</span>
+      <span className="h-2 w-2 rounded-full border border-black/10 flex-shrink-0"
+        style={{ backgroundColor: task.module.color || '#3b82f6' }} title={task.module.color} />
+      <span className="font-mono text-[10px] text-muted-foreground w-16 flex-shrink-0 truncate" title={task.code}>{task.code}</span>
       {showCycle && task.module.cycleIndex ? (
         <span className="px-1 rounded bg-violet-500/15 text-violet-500 border border-violet-500/30 text-[9px] flex-shrink-0">
           C{task.module.cycleIndex}

@@ -94,7 +94,9 @@ export const GanttSidePanel: React.FC<GanttSidePanelProps> = ({ onAddChild, onEd
                 {row.collapsed ? '▸' : '▾'}
               </span>
             )}
-            <span className="font-mono text-[10px] text-muted-foreground w-7 flex-shrink-0">{row.task.code}</span>
+            <span className="h-2 w-2 rounded-full border border-black/10 flex-shrink-0"
+              style={{ backgroundColor: row.task.module.color || '#3b82f6' }} title={row.task.module.color} />
+            <span className="font-mono text-[10px] text-muted-foreground w-16 flex-shrink-0 truncate" title={row.task.code}>{row.task.code}</span>
             <span className="truncate flex-1">{row.task.module.actionDescription}</span>
             <span className="font-mono text-[10px] text-muted-foreground flex-shrink-0">{describeDuration(row.task.durationMs)}</span>
           </button>

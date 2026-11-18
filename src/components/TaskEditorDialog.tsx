@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useProjectStore } from '@/stores/useProjectStore'
+import { MODULE_COLORS, useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { computeSchedule, wouldCreateCycle } from '@/lib/dependencyEngine'
 import { normalizeTimeConfig, parseTimeInput, quantize, describeDuration } from '@/lib/timeScale'
@@ -28,7 +28,7 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
   const { t } = useTranslation()
   const {
     project, setTaskTiming, setStartMode, addPredecessor, updatePredecessor,
-    removePredecessor, setTaskField, deleteTask, scheduleWarnings
+    removePredecessor, setTaskField, setTaskColor, deleteTask, scheduleWarnings
   } = useProjectStore()
   const { setSelectedTask } = useUIStore()
   const config = normalizeTimeConfig(project?.timeConfig)
@@ -41,6 +41,8 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
   const [name, setName] = useState('')
   const [moduleName, setModuleName] = useState('')
   const [stage, setStage] = useState('')
+  const [color, setColor] = useState(MODULE_COLORS[0])
+  const [applyColorToChildren, setApplyColorToChildren] = useState(false)
   const [startText, setStartText] = useState('0')
   const [durationText, setDurationText] = useState('0')
   const [endText, setEndText] = useState('0')
@@ -51,6 +53,8 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
     setName(task.module.actionDescription)
     setModuleName(task.module.moduleName)
     setStage(task.module.stage ?? '')
+    setColor(task.module.color ?? MODULE_COLORS[0])
+    setApplyColorToChildren(false)
     setStartText(String(task.startMs))
     setDurationText(String(task.durationMs))
     setEndText(String(task.endMs))
@@ -100,6 +104,15 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
 
   const inputClass = 'w-full px-2 py-1 text-sm border rounded bg-background'
   const labelClass = 'block text-xs text-muted-foreground mb-1'
+  const safeColor = /^#[0-9a-f]{6}$/i.test(color) ? color : '#3b82f6'
+  const commitColor = (value: string) => {
+    const digits = value.replace(/[^0-9a-f]/gi, '').slice(0, 6)
+    const next = /^#[0-9a-f]{6}$/i.test(value)
+      ? value
+      : digits.length === 6 ? `#${digits}` : MODULE_COLORS[0]
+    setColor(next)
+    setTaskColor(task.id, next, applyColorToChildren)
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -138,6 +151,30 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
                 onChange={e => setModuleName(e.target.value)}
                 onBlur={() => moduleName.trim() && setTaskField(task.id, 'moduleName', moduleName.trim())}
                 disabled={task.isSummary} />
+            </div>
+            <div className="col-span-3 border-t pt-3">
+              <label className={labelClass}>{t('gantt.color', { defaultValue: '颜色' })}</label>
+              <div className="flex flex-wrap items-center gap-2">
+                <input type="color" className="h-8 w-12 cursor-pointer border rounded bg-background p-0"
+                  value={safeColor}
+                  onChange={e => commitColor(e.target.value)}
+                  aria-label={t('gantt.color', { defaultValue: '颜色' })} />
+                <div className="flex flex-wrap gap-1">
+                  {MODULE_COLORS.map(c => (
+                    <button key={c} type="button" onClick={() => commitColor(c)}
+                      className="h-6 w-6 rounded border-2 border-background shadow-sm hover:scale-110"
+                      style={{ backgroundColor: c }} title={c} aria-label={c} />
+                  ))}
+                </div>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground ml-auto">
+                  <input type="checkbox" checked={applyColorToChildren}
+                    onChange={e => setApplyColorToChildren(e.target.checked)} />
+                  {t('gantt.applyColorToChildren', { defaultValue: '同步到所有下级' })}
+                </label>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                {t('gantt.colorHint', { defaultValue: '颜色用于甘特条、资源泳道、Excel 颜色列和 PDF；勾选后同步给整棵子树，未勾选只改当前节点。' })}
+              </p>
             </div>
           </section>
 

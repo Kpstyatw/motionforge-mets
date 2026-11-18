@@ -336,6 +336,9 @@
     "taskCount": "节点数",
     "sideHint": "单击选中，双击编辑；箭头显示依赖链路。",
     "editSelected": "编辑选中",
+    "color": "颜色",
+    "applyColorToChildren": "同步到所有下级",
+    "colorHint": "颜色用于甘特条、资源泳道、Excel 颜色列和 PDF；勾选后同步给整棵子树，未勾选只改当前节点。",
     "kind": {
       "module": "模块",
       "mechanism": "机构",
@@ -423,7 +426,9 @@
     "exportFailed": "Excel 导出失败",
     "importFailed": "Excel 导入失败",
     "imported": "已导入 {{count}} 行并按依赖重新排程；甘特图与表格已同步。",
-    "importOk": "Excel 已导入"
+    "importOk": "Excel 已导入",
+    "matrixLabelEvery": "表头时间合并 (刻度数)",
+    "matrixLabelEveryHint": "设为 N 时，甘特矩阵表头每 N 个刻度合并成一格并显示该段时间（如 0ms–400ms）；0 表示不合并，仅稀疏标注。数据行的条形始终按单刻度绘制，保持时间精度。"
   },
   "resource": {
     "title": "资源",

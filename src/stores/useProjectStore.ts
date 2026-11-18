@@ -9,7 +9,7 @@ import {
 import { useHistoryStore } from './useHistoryStore'
 import {
   collectDescendantIds, computeSchedule, normalizeModules,
-  syncLegacyFields, wouldCreateCycle
+  renumberHierarchyCodes, syncLegacyFields, wouldCreateCycle
 } from '@/lib/dependencyEngine'
 import {
   DEFAULT_EXCEL_LAYOUT, DEFAULT_GANTT_CONFIG, DEFAULT_TIME_CONFIG,
@@ -64,7 +64,9 @@ function freshProject(): ProjectData {
 export function migrateProject(input: Partial<ProjectData> & { modules?: ModuleData[] }): ProjectData {
   const base = freshProject()
   const timeConfig = normalizeTimeConfig(input.timeConfig)
-  const modules = normalizeModules(input.modules ?? [], timeConfig)
+  // Recompute display codes from the tree, so legacy T01/T02 projects and
+  // imported workbooks immediately gain hierarchy-aware numbering.
+  const modules = renumberHierarchyCodes(normalizeModules(input.modules ?? [], timeConfig))
   return {
     ...base,
     ...input,
@@ -140,6 +142,8 @@ interface ProjectState {
   addAction: (options?: { parentId?: string | null; kind?: TaskKind; moduleName?: string; actionDescription?: string; durationMs?: number; startMs?: number }) => string | null
   deleteTask: (id: string) => void
   setTaskField: (id: string, field: 'moduleName' | 'actionDescription' | 'stage' | 'color', value: string) => void
+  /** Set a node's colour; optionally push it to every descendant node. */
+  setTaskColor: (id: string, color: string, applyToDescendants?: boolean) => void
   recompute: () => void
 
   // ---- Resource allocation edition ----
@@ -160,7 +164,10 @@ interface CommitState {
 /** Recompute the whole schedule and write the resolved values back. */
 function resolveProject(project: ProjectData): string[] {
   const timeConfig = normalizeTimeConfig(project.timeConfig)
-  const normalized = normalizeModules(project.modules, timeConfig)
+  // Codes are a presentation of the current tree, not a stable identity;
+  // dependencies use ids. Renumber on every commit so add/delete/insert
+  // keeps the visible path consistent with parentCode and Excel references.
+  const normalized = normalizeModules(renumberHierarchyCodes(project.modules), timeConfig)
   const schedule = computeSchedule(normalized, timeConfig)
   project.modules = syncLegacyFields(normalized, schedule, timeConfig) as typeof project.modules
   project.timeConfig = timeConfig
@@ -509,6 +516,15 @@ export const useProjectStore = create<ProjectState>()(
     setTaskField: (id, field, value) => set(state => {
       if (!state.project) return
       const next = state.project.modules.map(m => m.id === id ? { ...m, [field]: value } : m)
+      commit(state, next)
+    }),
+
+    setTaskColor: (id, color, applyToDescendants = false) => set(state => {
+      if (!state.project) return
+      // Accept native picker values and the 6-digit form used by Excel.
+      const normalized = color.startsWith('#') ? color : `#${color.replace(/^#/, '')}`
+      const targets = new Set([id, ...(applyToDescendants ? collectDescendantIds(state.project.modules, id) : [])])
+      const next = state.project.modules.map(m => targets.has(m.id) ? { ...m, color: normalized } : m)
       commit(state, next)
     }),
 

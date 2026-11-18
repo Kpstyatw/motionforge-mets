@@ -90,6 +90,47 @@ describe('Gantt ⇄ Excel', () => {
     expect(labelled).toBeLessThan(timeHeaders.length) // not one label per column
   })
 
+  it('merges matrix header time cells into N-tick spans without merging data rows', async () => {
+    const project = fixture()
+    const schedule = computeSchedule(project.modules, CONFIG)
+    const rows = flattenTree(schedule)
+    const layout = {
+      ...project.excelLayout,
+      columnWidths: { ...project.excelLayout.columnWidths },
+      matrixLabelEvery: 4
+    }
+    const blob = await buildGanttWorkbook({ project, schedule, rows, layout })
+
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(await blob.arrayBuffer())
+    const matrix = wb.getWorksheet('甘特矩阵')!
+    const header = matrix.getRow(1)
+
+    // The merge list must contain only header-row horizontal spans (row 1).
+    const merges: string[] = (matrix.model.merges as string[]) ?? []
+    expect(merges.length).toBeGreaterThan(0)
+    merges.forEach(m => {
+      const [from, to] = m.split(':')
+      expect(from).toMatch(/^([A-Z]+)1$/)
+      expect(to).toMatch(/^([A-Z]+)1$/)
+    })
+    // Each merged header shows the span, e.g. "0ms–400ms".
+    const spanLabels = Array.from({ length: header.cellCount }, (_, i) =>
+      String(header.getCell(i + 1).value ?? '')
+    ).filter(v => v.includes('–'))
+    expect(spanLabels.length).toBeGreaterThan(0)
+    expect(spanLabels[0]).toMatch(/^.*–.*ms$/)
+
+    // No data-row merges: action bars stay one cell per tick.
+    expect(merges.every(m => /1$/.test(m.split(':')[0]))).toBe(true)
+
+    // The setting round-trips through the workbook.
+    const result = await importGanttWorkbook(new File([await blob.arrayBuffer()], 'merged.xlsx'))
+    expect(result.success).toBe(true)
+    expect(result.excelLayout?.matrixLabelEvery).toBe(4)
+  })
+
   it('table rows carry exactly the resolved schedule values', () => {
     const project = fixture()
     const schedule = computeSchedule(project.modules, CONFIG)
@@ -128,6 +169,8 @@ describe('Gantt ⇄ Excel', () => {
     expect(result.excelLayout?.headerHeight).toBe(42)
     expect(result.excelLayout?.matrixCellWidth).toBe(6)
     expect(result.excelLayout?.columnWidths.action).toBe(40)
+    // The editable colour column must survive the round trip.
+    expect(result.modules!.find(m => m.id === 'A')?.color).toBe('#3b82f6')
 
     const restored = result.modules!
     const restoredSchedule = computeSchedule(restored, result.timeConfig!)

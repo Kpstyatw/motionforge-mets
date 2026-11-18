@@ -97,6 +97,52 @@ export function legacyStartTimes(modules: ModuleData[]): number[] {
   return result
 }
 
+/**
+ * Reassign human-readable codes from the actual tree shape.
+ *
+ * A flat `T01 / T02 / ...` sequence cannot tell a reader which module owns a
+ * mechanism or which action owns a nested sub-action. The hierarchical form
+ * uses one two-digit sibling index per depth, e.g.
+ *   `01` (模块) → `01.01` (机构) → `01.01.01` (动作) → `01.01.01.01` (子动作)
+ * The parent code is always the prefix, so both Excel and the UI expose the
+ * containment relationship without needing a separate tree view. Internal
+ * dependencies point at stable ids, so renumbering never breaks edges.
+ */
+export function renumberHierarchyCodes(modules: ModuleData[]): ModuleData[] {
+  const ids = new Set(modules.map(m => m.id))
+  const children = new Map<string, string[]>()
+  const roots: string[] = []
+
+  modules.forEach(m => {
+    if (m.parentId && ids.has(m.parentId) && m.parentId !== m.id) {
+      const list = children.get(m.parentId) ?? []
+      list.push(m.id)
+      children.set(m.parentId, list)
+    } else {
+      roots.push(m.id)
+    }
+  })
+
+  const assigned = new Map<string, string>()
+  const visited = new Set<string>()
+  const assign = (id: string, segments: number[]) => {
+    if (visited.has(id)) return
+    visited.add(id)
+    assigned.set(id, segments.map(n => String(n).padStart(2, '0')).join('.'))
+    ;(children.get(id) ?? []).forEach((childId, index) => {
+      assign(childId, [...segments, index + 1])
+    })
+  }
+
+  roots.forEach((id, index) => assign(id, [index + 1]))
+  // Defensive: parent cycles or dangling references must still get a code.
+  modules.forEach(m => {
+    if (!visited.has(m.id)) assign(m.id, [visited.size + 1])
+  })
+
+  return modules.map(m => ({ ...m, code: assigned.get(m.id) ?? m.code ?? m.id }))
+}
+
 export interface NormalizeOptions {
   /** Generate T01, T02... codes where missing. */
   assignCodes?: boolean

@@ -336,6 +336,9 @@
     "taskCount": "ノード数",
     "sideHint": "クリックで選択、ダブルクリックで編集。矢印は依存チェーンです。",
     "editSelected": "選択を編集",
+    "color": "色",
+    "applyColorToChildren": "すべての下位ノードに適用",
+    "colorHint": "ガントバー、リソースレーン、Excel の色列と PDF に使用します。チェックするとサブツリー全体に適用され、未チェックの場合はこのノードのみ変更されます。",
     "kind": {
       "module": "モジュール",
       "mechanism": "機構",
@@ -423,7 +426,9 @@
     "exportFailed": "Excel 書き出し失敗",
     "importFailed": "Excel 読み込み失敗",
     "imported": "{{count}} 行を読み込み依存から再スケジュール済み。ガント図と表は同期しています。",
-    "importOk": "Excel を読み込みました"
+    "importOk": "Excel を読み込みました",
+    "matrixLabelEvery": "見出し時間の結合 (目盛数)",
+    "matrixLabelEveryHint": "N に設定すると、ガント行列の見出しで N 目盛ごとに 1 セルに結合し、その区間（例 0ms–400ms）を表示します。0 は結合せず疎なラベルのみ。データ行のバーは常に 1 目盛単位で、時間精度を保持します。"
   },
   "resource": {
     "title": "リソース",

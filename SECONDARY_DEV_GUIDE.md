@@ -112,10 +112,10 @@ interface ResourceAllocation {                                      // 多对多
 | 文件 | 职责 |
 | --- | --- |
 | `src/lib/timeScale.ts` | 时间基准：量化 `quantize`、格式化 `formatTime`、输入解析 `parseTimeInput`、刻度 `rulerTicks`、默认配置 |
-| `src/lib/dependencyEngine.ts` | 核心排程：规范化、环检测 `findCycles/wouldCreateCycle`、拓扑排序、`computeSchedule` 级联求解、树扁平化 `flattenTree`、依赖序列化/反序列化、前后继集合 |
+| `src/lib/dependencyEngine.ts` | 核心排程：规范化、环检测 `findCycles/wouldCreateCycle`、拓扑排序、`computeSchedule` 级联求解、树扁平化 `flattenTree`、依赖序列化/反序列化、前后继集合；`renumberHierarchyCodes` 按当前树生成 `01.01.01` 层级编号 |
 | `src/lib/resourceScheduler.ts` | 资源层：精确窗口换算 `placeAllocations`、按资源重叠检测 `detectConflicts`、泳道投影 `computeResourceSchedule`、忙碌时长 `resourceBusyMs`、窗口钳制 `clampAllocationWindow` |
 | `src/lib/excelModel.ts` | 纯数据层（无 ExcelJS）：Excel 行构造 `buildExcelRows`、列定义、矩阵跨度 `matrixStep`、文件名 |
-| `src/services/excelService.ts` | ExcelJS 工作簿读写的**按需加载**模块：`buildGanttWorkbook` / `importGanttWorkbook` |
+| `src/services/excelService.ts` | ExcelJS 工作簿读写的**按需加载**模块：`buildGanttWorkbook` / `importGanttWorkbook`；甘特矩阵表头按 `matrixLabelEvery` 合并时间列并显示时间段 |
 | `src/lib/cycleEngine.ts` | **固定周期投影**：`normalizeCycleConfig` / `expandCycles` / `collapseCycleProjection` / 实例↔模板 id 映射 / 超周期检测；单周期是 `repeats=1` 的退化路径 |
 | `src/hooks/useCycleView.ts` | 甘特 / 资源 / Excel 共用的派生视图：展开模板 → 排程 → 资源窗口，三处数据不可能不一致；额外提供 `templateSchedule` 供多周期甘特按模板行渲染 |
 | `src/components/CycleDialog.tsx` | 周期时长/周期数设置、常用周期预设、超周期提示 |
@@ -131,7 +131,7 @@ interface ResourceAllocation {                                      // 多对多
 | `src/lib/cycleEngine.test.ts` | 7 项单测：单周期退化、N 周期展开与平移、层级/依赖继承、资源窗口继承、折叠回模板、超周期告警、**跨周期冲突检出** |
 | `src/lib/dependencyEngine.test.ts` | 15 项单测：级联重算、四种依赖、环检测、层级折叠、毫秒精度 |
 | `src/lib/resourceScheduler.test.ts` | 8 项单测：精确窗口、级联跟随、跨流程冲突、边界相接不冲突、多对多、汇总/删除任务忽略、忙碌并集、窗口钳制 |
-| `src/services/excelService.test.ts` | 6 项单测：表格取数一致、工作簿往返无损、base64 字节通道导入、多周期折叠回模板、资源/占用往返无损、矩阵列上限 |
+| `src/services/excelService.test.ts` | 8 项单测：矩阵层级列+稀疏时间标签、表头 N 刻度合并单元格、表格取数一致、工作簿往返无损、base64 字节通道导入、多周期折叠回模板、资源/占用往返无损、矩阵列上限 |
 
 ### 改造
 
@@ -161,10 +161,13 @@ interface ResourceAllocation {                                      // 多对多
 
 - **视图切换**：工具栏按钮在「层级甘特图」与「原有节拍网格」间切换；两者共享同一份 `computeSchedule` 结果。
 - **尺寸可调**：「时间刻度」对话框除刻度/精度/行高外，还可设「时间格宽」（每格时间刻度的像素数，4–400 px，换算为 `pxPerMs` = 格宽 ÷ 刻度，与工具栏缩放等效），随项目持久化。左侧第一列是模块/机构层级信息列，宽度固定、不随时间格变化。
+- **层级编号**：编号按当前树自动生成层级路径，例如 `01` → `01.01` → `01.01.01` → `01.01.01.01`；父节点编号始终是子节点编号的前缀，模块/机构/动作/子动作及任意深度的子动作都能从编号直接看出包含关系。内部依赖仍使用稳定 `id`，新增、删除、调整顺序后编号自动重排，不会破坏前置关系。Excel「编号」「上级编号」「前置任务」列使用同一套层级编号。
+- **节点颜色**：任务编辑器「颜色」区提供系统取色器 + 10 个预设色，可按节点单独修改；勾选「同步到所有下级」则整棵子树统一换色。颜色同步到甘特条、资源泳道、Excel「颜色」列与 PDF；Excel 导入时颜色列也会写回。
 - **层级操作**：侧栏树单击选中、双击编辑；每个节点可「新增下级」（子动作的下级仍是子动作，层数不限）；逐节点折叠箭头 + 全部展开/折叠 + 隐藏所有子动作。汇总行（模块/机构）起止时间由后代自动卷算，不可直接编辑、不可挂前置任务。
 - **依赖编辑**：任务编辑器「前置任务」区可新增（下拉选择候选任务 + 类型 + 延迟）、修改、删除；`wouldCreateCycle` 实时拦截会形成环的选择；甘特图以箭头展示依赖，点击可选中相关任务。
 - **级联重算**：任何 `setTaskTiming`（开始/时长/结束）、`addPredecessor` 等操作提交后，`commit()` 调用依赖引擎重排全部任务并写回；后置起始自动同步，环或悬空依赖在界面给出警告。
 - **Excel 往返**：ExcelDialog 中自定义行高/列宽/字号/矩阵跨度后导出五工作表工作簿；导入时按依赖重新排程并写回项目（含资源与占用）；「校验一致性」逐行检查 `开始+持续=结束` 与依赖约束并给出报告。
+  - **甘特矩阵表头时间合并**：「表头时间合并 (刻度数)」设为 N 时，第 2 页甘特矩阵的表头每 N 个刻度列**合并成一个单元格**，显示该段时间段（如 `0ms–400ms`），解决窄列里时间标签竖排拥挤的问题；0 = 不合并（退回按列宽自动稀疏标注）。仅合并表头行，数据行的条形始终按单刻度绘制以保持时间精度。该设置写入「设置与依赖」表，导出→导入无损往返。
 - **流程 / 资源双视图**：甘特工具栏的「流程 / 资源」切换只改变分组维度，不改数据。流程视图看完整时序链，资源视图看各机构/电机的占用与冲突；任务编辑框的「资源占用」入口以精确偏移+时长声明占用，窗口随依赖级联自动跟随。冲突只以红标提示，不自动改时序（后续可加自动消解开关）。
 - **单周期 / 多周期**：工具栏「单周期 / 多周期」一键切换 + 齿轮设置周期时长与数量。单周期直接编辑模板；多周期在**同一行的时间轴上向右延伸**出各周期条形（不再向下追加重复行），画紫色周期分隔线与 C1/C2 编号，表头「起止 (ms) ×N」提示每行含 N 个周期。双击任一周期的条形编辑的都是模板，全部周期同步。跨周期资源重叠在资源泳道标红。
 

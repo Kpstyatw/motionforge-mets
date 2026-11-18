@@ -79,3 +79,37 @@ describe('predecessor edits drive successor start', () => {
     expect(s.byId['B'].startMs).toBe(700)
   })
 })
+
+describe('hierarchy presentation', () => {
+  it('renumbers loaded projects with parent-prefixed hierarchical codes', () => {
+    const module = {
+      ...mk('M', 0, 0), kind: 'module' as const, moduleName: '模块', actionDescription: '模块'
+    }
+    const mechanism = { ...mk('K', 0, 0), kind: 'mechanism' as const, parentId: 'M' }
+    const action = { ...mk('A', 0, 100), parentId: 'K' }
+    const sub = { ...mk('S', 0, 50), kind: 'subaction' as const, parentId: 'A' }
+    load([module, mechanism, action, sub])
+
+    const codes = Object.fromEntries(useProjectStore.getState().project!.modules.map(m => [m.id, m.code]))
+    expect(codes).toEqual({ M: '01', K: '01.01', A: '01.01.01', S: '01.01.01.01' })
+  })
+
+  it('can edit one colour or apply it to the whole subtree', () => {
+    const module = {
+      ...mk('M', 0, 0), kind: 'module' as const, moduleName: '模块', actionDescription: '模块', color: '#111111'
+    }
+    const mechanism = { ...mk('K', 0, 0), kind: 'mechanism' as const, parentId: 'M', color: '#222222' }
+    const action = { ...mk('A', 0, 100), parentId: 'K', color: '#333333' }
+    load([module, mechanism, action])
+
+    useProjectStore.getState().setTaskColor('K', '#ff0000')
+    let modules = useProjectStore.getState().project!.modules
+    expect(modules.find(m => m.id === 'K')!.color).toBe('#ff0000')
+    expect(modules.find(m => m.id === 'A')!.color).toBe('#333333')
+
+    useProjectStore.getState().setTaskColor('K', '#00ff00', true)
+    modules = useProjectStore.getState().project!.modules
+    expect(modules.find(m => m.id === 'K')!.color).toBe('#00ff00')
+    expect(modules.find(m => m.id === 'A')!.color).toBe('#00ff00')
+  })
+})

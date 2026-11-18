@@ -24,6 +24,10 @@ export const ResourceAllocationDialog: React.FC<Props> = ({ taskId, onClose }) =
   const [offset, setOffset] = useState('0')
   const [duration, setDuration] = useState('0')
   const [error, setError] = useState<string | null>(null)
+  // In-app replacement for window.prompt(), which Electron disables (returns
+  // null silently). Keeps the quick-add flow working in both web and desktop.
+  const [quickName, setQuickName] = useState('')
+  const [quickAdding, setQuickAdding] = useState(false)
 
   if (!taskId || !project) return null
   const task = project.modules.find(m => m.id === taskId)
@@ -59,11 +63,13 @@ export const ResourceAllocationDialog: React.FC<Props> = ({ taskId, onClose }) =
   }
 
   const quickAddResource = () => {
-    const name = window.prompt(t('resource.newName', { defaultValue: '新资源名称（如 管库抓手）' }))
-    if (name?.trim()) {
-      const id = addResource({ name: name.trim() })
-      setNewResourceId(id)
-    }
+    const name = quickName.trim()
+    if (!name) return
+    const id = addResource({ name })
+    setNewResourceId(id)
+    setQuickName('')
+    setQuickAdding(false)
+    setError(null)
   }
 
   const inputClass = 'w-full px-2 py-1 text-sm border rounded bg-background'
@@ -121,10 +127,25 @@ export const ResourceAllocationDialog: React.FC<Props> = ({ taskId, onClose }) =
                     {resources.length === 0 && <option value="">{t('resource.noResource', { defaultValue: '（无资源，请先新建）' })}</option>}
                     {resources.map(r => <option key={r.id} value={r.id}>{r.name}{r.type ? ` · ${r.type}` : ''}</option>)}
                   </select>
-                  <button onClick={quickAddResource} className="px-2 border rounded hover:bg-accent whitespace-nowrap text-xs">
+                  <button onClick={() => setQuickAdding(v => !v)} className="px-2 border rounded hover:bg-accent whitespace-nowrap text-xs">
                     {t('resource.new', { defaultValue: '新建' })}
                   </button>
                 </div>
+                {quickAdding && (
+                  <div className="flex gap-2 mt-2">
+                    <input
+                      autoFocus
+                      className={inputClass}
+                      value={quickName}
+                      placeholder={t('resource.newName', { defaultValue: '新资源名称（如 管库抓手）' })}
+                      onChange={e => setQuickName(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); quickAddResource() } }}
+                    />
+                    <button onClick={quickAddResource} className="px-3 border rounded bg-primary text-primary-foreground hover:opacity-90 whitespace-nowrap text-xs">
+                      {t('resource.add', { defaultValue: '添加' })}
+                    </button>
+                  </div>
+                )}
               </div>
               <div>
                 <label className={labelClass}>{t('resource.offset', { defaultValue: '偏移 (ms)' })}</label>

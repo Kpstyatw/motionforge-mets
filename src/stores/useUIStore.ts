@@ -35,6 +35,12 @@ interface UIState {
   /** Collapsed hierarchy nodes: sub-actions and their descendants are hidden. */
   collapsedTaskIds: string[]
   /**
+   * Explicitly hidden rows: the selected action/sub-action (and its subtree)
+   * that the user chose to remove from the Gantt entirely. Stored by template
+   * id so hiding survives the single/multi-cycle switch. View-only state.
+   */
+  hiddenTaskIds: string[]
+  /**
    * Follow playback: the canvas keeps the cells being painted in view by
    * scrolling, and zooms out when they will not fit. `followBaseZoom` is the
    * level the user chose; follow mode never zooms in past it and returns to
@@ -62,6 +68,10 @@ interface UIState {
   expandAll: () => void
   /** Collapse every action/subaction node: hide all sub-actions at once. */
   collapseAllSubActions: (actionIds: string[]) => void
+  /** Hide the given row ids (already expanded to include descendants). */
+  hideTasks: (ids: string[]) => void
+  /** Restore all hidden rows. */
+  unhideAll: () => void
 }
 
 export const useUIStore = create<UIState>()(
@@ -72,6 +82,7 @@ export const useUIStore = create<UIState>()(
     chartView: 'gantt',
     selectedTaskId: null,
     collapsedTaskIds: [],
+    hiddenTaskIds: [],
     followPlayback: false,
     followBaseZoom: 1,
     theme: 'auto',
@@ -133,6 +144,12 @@ export const useUIStore = create<UIState>()(
     }),
     setCollapsedTasks: ids => set(state => { state.collapsedTaskIds = [...ids] }),
     expandAll: () => set(state => { state.collapsedTaskIds = [] }),
-    collapseAllSubActions: actionIds => set(state => { state.collapsedTaskIds = [...actionIds] })
+    collapseAllSubActions: actionIds => set(state => { state.collapsedTaskIds = [...actionIds] }),
+    hideTasks: ids => set(state => {
+      const merged = new Set(state.hiddenTaskIds)
+      ids.forEach(id => merged.add(id))
+      state.hiddenTaskIds = [...merged]
+    }),
+    unhideAll: () => set(state => { state.hiddenTaskIds = [] })
   }))
 )

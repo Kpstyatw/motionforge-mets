@@ -2,7 +2,7 @@ import { ProjectData, ProjectFileFormat } from '@/types'
 import { TreeRow, ScheduleResult } from '@/lib/dependencyEngine'
 import { SourceFile } from '@/stores/useProjectStore'
 import { bytesToBase64 } from '@/lib/binary'
-import { buildProjectCSV, downloadBlob } from '@/services/exportService'
+import { buildProjectCSV, downloadBlob, withCsvBom } from '@/services/exportService'
 import { IS_ONLINE } from '@/lib/platform'
 import { buildProjectJson, normalizeProjectSnapshot } from '@/services/jsonProject'
 
@@ -81,7 +81,7 @@ async function buildSavePayload(input: SaveProjectInput, format: ProjectFileForm
       snapshot
     )
     return {
-      blob: new Blob([csv], { type: MIME.csv }),
+      blob: new Blob([withCsvBom(csv)], { type: MIME.csv }),
       warning: 'CSV 项目文件依赖 __project_json 元数据列，请勿删除该列'
     }
   }

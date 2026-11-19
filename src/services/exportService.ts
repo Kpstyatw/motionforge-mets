@@ -10,6 +10,19 @@ export interface ExportOptions {
 }
 
 /**
+ * UTF-8 BOM. Windows Excel ignores the `charset=utf-8` MIME type and would
+ * otherwise decode a BOM-less CSV with the system ANSI code page (GBK on
+ * Chinese Windows), turning every Chinese character into mojibake. Prepending
+ * this byte-order mark is the only reliable way to make Excel open UTF-8 CSV.
+ */
+export const UTF8_BOM = '\uFEFF'
+
+/** Wrap CSV text with the BOM required for correct decoding in Excel. */
+export function withCsvBom(csv: string): string {
+  return csv.startsWith(UTF8_BOM) ? csv : UTF8_BOM + csv
+}
+
+/**
  * CSV export. The Gantt edition writes the canonical millisecond columns in
  * addition to the upstream five, so a file exported here round-trips with
  * exact timing, hierarchy and dependency edges.
@@ -74,7 +87,7 @@ export function exportToCSV(
 ): void {
   try {
     const csv = buildProjectCSV(modules, options, timeConfig)
-    downloadFile(csv, 'cycleview-gantt-export.csv', 'text/csv')
+    downloadFile(withCsvBom(csv), 'cycleview-gantt-export.csv', 'text/csv;charset=utf-8')
   } catch (error) {
     console.error('CSV export failed:', error)
     throw new Error('CSV export failed')

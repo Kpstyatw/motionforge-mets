@@ -3,7 +3,7 @@ import { ModuleData, ProjectData, TaskKind } from '@/types'
 import { computeSchedule, flattenTree } from '@/lib/dependencyEngine'
 import { DEFAULT_EXCEL_LAYOUT, DEFAULT_GANTT_CONFIG, DEFAULT_TIME_CONFIG } from '@/lib/timeScale'
 import { buildProjectJson, parseProjectJson, PROJECT_META_COLUMN } from './jsonProject'
-import { buildProjectCSV } from './exportService'
+import { buildProjectCSV, UTF8_BOM, withCsvBom } from './exportService'
 import { parseProjectCSVText } from './csvImport'
 import { buildGanttWorkbook, importGanttWorkbook } from './excelService'
 
@@ -112,6 +112,29 @@ describe('CSV / JSON / Excel project file consistency', () => {
     expect(csv).toContain(PROJECT_META_COLUMN)
 
     const result = await parseProjectCSVText(csv)
+    expect(result.success).toBe(true)
+    expect(result.data?.length).toBe(project.modules.length)
+    expectSameAuthoringData(result.projectMeta!, project)
+  })
+
+  it('writes a UTF-8 BOM on export and round-trips a BOM-prefixed CSV', async () => {
+    const project = fixture()
+    const plain = buildProjectCSV(
+      project.modules,
+      { format: 'csv', includeCalculatedPositions: true },
+      project.timeConfig,
+      project
+    )
+    const exported = withCsvBom(plain)
+
+    // BOM present exactly once, and it does not corrupt the header row.
+    expect(exported.startsWith(UTF8_BOM)).toBe(true)
+    expect(exported.charCodeAt(1)).not.toBe(0xFEFF)
+    expect(exported.slice(1)).toBe(plain)
+
+    // A BOM-prefixed CSV (our own export, or Excel re-save) imports cleanly:
+    // the first column name must not carry the BOM.
+    const result = await parseProjectCSVText(exported)
     expect(result.success).toBe(true)
     expect(result.data?.length).toBe(project.modules.length)
     expectSameAuthoringData(result.projectMeta!, project)

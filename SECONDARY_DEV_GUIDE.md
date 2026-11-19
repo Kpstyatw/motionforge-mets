@@ -115,7 +115,7 @@ interface ResourceAllocation {                                      // 多对多
 | `src/lib/timeScale.ts` | 时间基准：量化 `quantize`、格式化 `formatTime`、输入解析 `parseTimeInput`、刻度 `rulerTicks`、默认配置 |
 | `src/lib/dependencyEngine.ts` | 核心排程：规范化、环检测 `findCycles/wouldCreateCycle`、拓扑排序、`computeSchedule` 级联求解、树扁平化 `flattenTree`、依赖序列化/反序列化、前后继集合；`renumberHierarchyCodes` 按当前树生成 `01.01.01` 层级编号 |
 | `src/lib/resourceScheduler.ts` | 资源层：窗口换算 `placeAllocations`（按 `activeSlot` 解析落点）、资源树冲突 `detectConflicts`（祖先×后代，同任务/兄弟不判）、层级泳道投影 `computeResourceSchedule`（父先子后 + depth）、忙碌时长 `resourceBusyMs`、窗口钳制 `clampAllocationWindow` |
-| `src/lib/resourceTree.ts` | 资源树/相位纯函数：祖先链 `resourceChain/isResourceAncestor`、相位 `selectedSlotIndex`、落点 `resolveClaimResourceId`、机构自动占用派生 `deriveMechanismAllocations`、冲突域 `claimsShareDomain` |
+| `src/lib/resourceTree.ts` | 资源树/相位纯函数：祖先链 `resourceChain/isResourceAncestor`、相位 `selectedSlotIndex`、落点 `resolveClaimResourceId`、归属反查 `buildResourceOwnerIndex`、冲突域 `claimsShareDomain` |
 | `src/lib/excelModel.ts` | 纯数据层（无 ExcelJS）：Excel 行构造 `buildExcelRows`、列定义、矩阵跨度 `matrixStep`、文件名 |
 | `src/services/excelService.ts` | ExcelJS 工作簿读写的**按需加载**模块：`buildGanttWorkbook` / `importGanttWorkbook`；甘特矩阵表头按 `matrixLabelEvery` 合并时间列并显示时间段；设置表保存/恢复 `ganttConfig`、`canvasConfig` 与项目版本/时间戳 |
 | `src/services/jsonProject.ts` | JSON 项目文件：`buildProjectJson` / `parseProjectJson`，统一走 `migrateProject`，并定义 CSV 元数据列 `__project_json` |
@@ -195,18 +195,26 @@ interface ResourceAllocation {                                      // 多对多
 
 ### 5.2 目标模型（四条规则）
 
-1. **物理机构映射到抽象资源，绑定后自动产生占用。** 机构节点是可选择绑定一个抽象资源（`ModuleData.resourceId`，可选）——这是“物理模块 → 抽象资源”的显式映射，不是身份合并。绑定后，归属于该机构的动作在其执行窗口内**自动占用**该资源；用户不必再手工声明。显式 `ResourceAllocation` 继续保留，用于一个动作占用多个资源（抓手 + 样本针协作）或占用不由任何机构映射而来的抽象资源（如单个孔位）。映射基数由数据决定，可一对一、一对多、多对一。
+1. **物理机构映射到抽象资源是层级归属，不产生占用。** 流程节点（模块/机构）可选择一个抽象资源作为归属（`ModuleData.resourceId`，可选）——这是“物理模块 → 抽象资源”的显式映射，仅用于把资源泳道分组到对应模块/机构下，让两个视图的层级保持一致。**归属绝不意味着该节点下的流程动作占用该资源**：一个动作是否占用、占用多久，完全由流程甘特图里为该动作 authored 的 `ResourceAllocation`（`offsetMs + durationMs`）决定。映射基数由数据决定，可一对一、一对多、多对一；资源可在流程图编辑器或资源视图中新增，占用时间在流程图编辑器中设置并实时同步到资源视图。
 2. **资源有组成层级。** `Resource` 增加 `parentId`，形成资源树：清洗盘（父）→ 孔位 1..N（子）。占用某个子资源不排斥其他子资源；占用父资源则向下传播，与所有子资源的占用窗口互斥。父资源的忙碌度显示“部分占用 / 全部占用”。
 3. **子资源位置绑定父资源相位。** 父资源可声明旋转模型，子槽位随父旋转；槽位身份（孔 1、孔 2…）稳定，空间位置只是派生量。外部工位空间固定，“当前周期对准工位的槽位”由相位函数推导，不逐周期手填。详见 5.2.1。
 4. **冲突检测在资源树上做，按身份不按位置。** 沿用半开区间 `[start, end)` 和整数毫秒。冲突判定：同资源重叠、祖先占用与后代占用重叠；兄弟槽位之间不冲突；盘转到何处不改变槽位身份，因此不产生额外的跨槽位冲突。冲突仍只提示、不自动改时序。
 
-两种占用来源：
+**两类独立的冲突都要体现（缺一不可）：**
+
+| 冲突维度 | 检测对象 | 颜色标记 | 实现模块 |
+|---|---|---|---|
+| 资源占用冲突 | 多个动作声明占用同一（或祖先/后代）资源，时间重叠 | 红色 `!` | `resourceScheduler.ts` |
+| 机构并发冲突 | 同一机构（无机构则回退到模块）下多个**最细叶子动作**执行窗口重叠——一个物理机构同一时刻只能做一件事 | 橙色 `M` | `mechanismConflict.ts` |
+
+机构并发冲突刻意只比较最细叶子（无子节点的 action/subaction）：父动作与其子动作是同一动作的两个粒度，天然重叠不算冲突；不同机构互不干扰；无机构/模块归属的动作跳过；半开区间首尾相接不算冲突；零时长忽略。两类冲突都只提示、不改时序。流程甘特图动作条可同时显示两种标记，工具栏分别汇总数量。
+
+占用只有一种来源 —— 流程甘特图里为动作声明的 `ResourceAllocation`，相对动作开始的 `offsetMs + durationMs`，随依赖级联移动。它同时服务所有场景（抓手、样本针、孔位、多资源协作）。资源归属（模块/机构 → 资源）只决定泳道分组，不生成任何占用；历史文件里若残留 `source: 'mechanism'` 的占用仍可显示，但新数据不再产生。
 
 | 来源 | 生成方式 | 典型场景 |
 |---|---|---|
-| 自动占用 | 机构节点绑定资源后，由该机构下每个动作的 `[startMs, endMs)` 派生 | 抓手、样本针等“动作即占用”的机构 |
-| 显式占用 | `ResourceAllocation`，相对动作的 `offsetMs + durationMs`，随依赖级联移动 | 孔位、多资源协作、占用非机构资源 |
-| 槽位占用（由占用来源落到的具体槽位） | 自动/显式占用解析到某槽位后，占用挂在**该槽位 id** 上 | “孔上有管即占用”、逐周期选孔 |
+| 显式占用（唯一） | `ResourceAllocation`，相对动作的 `offsetMs + durationMs`，随依赖级联移动 | 抓手、样本针、孔位、多资源协作等全部场景 |
+| 槽位占用（占用落到的具体槽位） | 占用解析到某槽位后，挂在**该槽位 id** 上 | “孔上有管即占用”、逐周期选孔 |
 
 #### 5.2.1 旋转相位与“当前选中孔位”
 
@@ -229,7 +237,7 @@ interface ResourceAllocation {                                      // 多对多
 - 资源泳道按资源树分组：盘为父泳道，可展开孔位子泳道；每个周期在盘泳道标注当前选中槽位（由相位函数得出，非手填），占用条始终画在其槽位子泳道上。
 - Excel 五工作表的「资源」表增加 `上级资源` / `槽位索引` / `旋转槽位数` / `每周期步进` / `起始槽位` 列；JSON/CSV（`__project_json`）自动兼容新增字段，旧文件缺失时按 `undefined` 处理，`motion` 缺失按“不旋转”处理（每周期选中同一槽位）。
 - 现有 11 机构 / 11 资源的示例数据补齐“物理模块 → 抽象资源”的映射关系（按语义对应，不强行一一绑定），并为清洗盘补旋转配置与孔位索引；机构名（物理）与资源名（抽象）允许不同，显示各自名称，靠 `resourceId` 关联。
-- 补充单测：父子占用冲突、兄弟占用不冲突、首尾相接不冲突、机构绑定后的自动占用随依赖级联移动、旋转相位选中槽位正确、占用在盘旋转后仍绑定原槽位、选中槽位占用与孔位既有占用重叠时报冲突。
+- 补充单测：父子占用冲突、兄弟占用不冲突、首尾相接不冲突、归属绑定本身不产生任何占用（仅显式声明才产生）、显式占用随依赖级联移动、旋转相位选中槽位正确、占用在盘旋转后仍绑定原槽位、选中槽位占用与孔位既有占用重叠时报冲突。
 
 **阶段 2 — 物料状态推导（后做）**
 
@@ -241,7 +249,7 @@ interface ResourceAllocation {                                      // 多对多
 ### 5.4 与现有设计的边界
 
 - **视图不合并**：流程视图仍按模块/机构/动作分组，资源视图仍按资源树分组；两者通过 `resourceId` 联动高亮。模型统一不等于视图统一。
-- **汇总节点仍不排程**：机构节点依然是汇总行，其“自动占用”由其下动作派生，机构自身不产生额外占用窗口。
+- **汇总节点仍不排程**：机构/模块节点依然是汇总行，本身既不排程也不产生占用窗口；资源占用只来自流程里为动作显式声明的窗口，机构归属资源只用于层级分组。
 - **旋转只改位置、不改身份**：盘的子槽位随盘旋转，但占用、冲突、统计全部按槽位 id；相位函数只决定“当前选中哪个槽位”，不复制或迁移占用记录。多工位用 `stationOffset` 区分，仍落到具体槽位判重。
 - **多周期**：实例占用沿用 `templateIdOf` 折叠规则；跨周期同资源重叠继续在资源泳道标红；旋转选孔按实例周期索引推导，与多周期横向投影共用同一个 cycle 编号。
 - **三个保存格式**：新增字段全部进入同一份规范化 `ProjectData` 快照，JSON / CSV / Excel 保持信息一致；读取旧文件时新字段缺省，不破坏历史项目。

@@ -62,8 +62,12 @@ const num = (value: unknown, fallback = 0): number => {
 const VALID_KINDS: TaskKind[] = ['module', 'mechanism', 'action', 'subaction']
 
 export function parseProjectCSVText(csv: string): Promise<CSVImportResult> {
+  // A UTF-8 BOM (as written by our own CSV export for Excel compatibility)
+  // would otherwise become part of the first header name (e.g. "\uFEFFid"),
+  // breaking column lookup on import. Strip it before handing text to Papa.
+  const text = csv.charCodeAt(0) === 0xFEFF ? csv.slice(1) : csv
   return new Promise<CSVImportResult>(resolve => {
-    Papa.parse(csv, {
+    Papa.parse(text, {
       header: true,
       skipEmptyLines: true,
       complete: results => {

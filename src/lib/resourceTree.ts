@@ -1,11 +1,11 @@
-import { Resource, ResourceAllocation, RotaryMotion } from '@/types'
-import { ScheduleResult, ScheduledTask } from './dependencyEngine'
+import { ModuleData, Resource, ResourceAllocation, RotaryMotion } from '@/types'
 
 /**
  * Resource-tree + rotary-phase engine — pure, DOM-free, unit-testable.
  *
  * This layer resolves *where a claim really lands*:
- *   - mechanism bindings turn into auto claims on descendant actions,
+ *   - ownership bindings (module/mechanism → resource) are a hierarchy hint
+ *     only; they never create occupation — claims come from authored actions,
  *   - activeSlot claims resolve to the child slot selected by rotation phase,
  *   - ancestor relationships decide which claims can conflict.
  *
@@ -80,55 +80,6 @@ export function resolveClaimResourceId(
   return slot?.id ?? allocation.resourceId
 }
 
-/** Leaf tasks underneath a task id (or the task itself when it has no children). */
-function descendantLeaves(schedule: ScheduleResult, id: string): ScheduledTask[] {
-  const task = schedule.byId[id]
-  if (!task) return []
-  if (!task.childIds.length) return [task]
-  const out: ScheduledTask[] = []
-  const seen = new Set<string>()
-  const walk = (tid: string) => {
-    if (seen.has(tid)) return
-    seen.add(tid)
-    const node = schedule.byId[tid]
-    if (!node) return
-    if (!node.childIds.length) { out.push(node); return }
-    node.childIds.forEach(walk)
-  }
-  task.childIds.forEach(walk)
-  return out
-}
-
-/**
- * Synthesise one claim per descendant action of every mechanism node that is
- * bound to a resource. The claim window equals the action's own execution
- * window, so dependency cascades move it with no extra bookkeeping.
- *
- * These claims carry `source: 'mechanism'` and are added in the view layer
- * only — `project.allocations` is never modified.
- */
-export function deriveMechanismAllocations(schedule: ScheduleResult): ResourceAllocation[] {
-  const out: ResourceAllocation[] = []
-  for (const task of schedule.tasks) {
-    if (task.kind !== 'mechanism') continue
-    const resourceId = task.module.resourceId
-    if (!resourceId) continue
-    for (const leaf of descendantLeaves(schedule, task.id)) {
-      out.push({
-        id: `auto:${task.id}:${leaf.id}:${resourceId}`,
-        taskId: leaf.id,
-        resourceId,
-        offsetMs: 0,
-        durationMs: Math.max(0, leaf.durationMs),
-        slotMode: 'fixed',
-        source: 'mechanism',
-        notes: `自动占用 · ${task.module.moduleName || task.module.actionDescription}`
-      })
-    }
-  }
-  return out
-}
-
 /** Two claims share a conflict domain when either resource is an ancestor of the other. */
 export function claimsShareDomain(
   aResourceId: string,
@@ -144,4 +95,53 @@ export function claimsShareDomain(
 /** Depth of a resource in its tree (0 = root), with a cycle guard. */
 export function resourceDepth(resourceId: string, resources: Resource[] | Map<string, Resource>): number {
   return Math.max(0, resourceChain(resourceId, resources).length - 1)
+}
+
+/**
+ * Flow-side ownership of a resource, reversed from flow-node bindings.
+ * A node (mechanism or module) with `resourceId = R` means "this node claims
+ * R"; for the resource-centred view we invert that into "R belongs under this
+ * module → mechanism". A module-bound resource has no mechanism, so it shows
+ * directly under that module. Unbound resources stay ungrouped.
+ */
+export interface ResourceOwner {
+  moduleId: string
+  moduleName: string
+  mechanismId: string
+  mechanismName: string
+}
+
+/**
+ * Build resourceId → owning module/mechanism from the flow tree.
+ *
+ * Both mechanism and module nodes may bind a resource. A mechanism binding
+ * nests the resource under its parent module → mechanism; a module binding
+ * puts it directly under that module (mechanism fields empty). Multiple nodes
+ * may bind the same resource; the first in tree order wins so a resource
+ * appears on exactly one lane (no duplicate rows).
+ */
+export function buildResourceOwnerIndex(modules: ModuleData[]): Map<string, ResourceOwner> {
+  const byId = new Map(modules.map(m => [m.id, m]))
+  const owners = new Map<string, ResourceOwner>()
+  for (const m of modules) {
+    if (!m.resourceId || owners.has(m.resourceId)) continue
+    const name = m.moduleName || m.actionDescription || m.code || m.id
+    if (m.kind === 'mechanism') {
+      const parent = m.parentId ? byId.get(m.parentId) : undefined
+      owners.set(m.resourceId, {
+        moduleId: parent?.id ?? '',
+        moduleName: parent?.moduleName || parent?.actionDescription || '',
+        mechanismId: m.id,
+        mechanismName: name
+      })
+    } else if (m.kind === 'module') {
+      owners.set(m.resourceId, {
+        moduleId: m.id,
+        moduleName: name,
+        mechanismId: '',
+        mechanismName: ''
+      })
+    }
+  }
+  return owners
 }

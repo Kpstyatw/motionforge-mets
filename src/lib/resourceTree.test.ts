@@ -3,7 +3,7 @@ import { ModuleData, Resource, ResourceAllocation, RotaryMotion, TaskKind } from
 import { computeSchedule } from './dependencyEngine'
 import { DEFAULT_TIME_CONFIG } from './timeScale'
 import {
-  claimsShareDomain, deriveMechanismAllocations, isResourceAncestor,
+  buildResourceOwnerIndex, claimsShareDomain, isResourceAncestor,
   resolveClaimResourceId, resourceChain, resourceDepth, selectedSlotIndex
 } from './resourceTree'
 import { computeResourceSchedule } from './resourceScheduler'
@@ -77,22 +77,33 @@ describe('resource phase engine', () => {
     expect(claimsShareDomain('H0', 'GRIP', TREE)).toBe(false)
   })
 
-  it('derives auto claims from a bound mechanism down to descendant actions', () => {
+  it('ownership binding alone never creates occupation — only explicit claims do', () => {
+    // A mechanism bound to a resource is a hierarchy hint, not an occupation.
+    // With no authored allocation the resource lane must stay empty even though
+    // actions run under the bound mechanism for the whole cycle.
     const modules = [
       node('M', 'module', null, 0, 0),
       node('K', 'mechanism', 'M', 0, 0, 'GRIP'),
-      node('A', 'action', 'K', 1000, 500), // has a child → summary, not claimed
-      node('B', 'subaction', 'A', 1500, 300), // leaf → claimed
-      node('C', 'action', 'K', 3000, 400), // leaf → claimed
-      node('U', 'action', 'M', 5000, 400) // outside the mechanism
+      node('B', 'subaction', 'K', 1500, 300),
+      node('C', 'action', 'K', 3000, 400)
     ]
     const schedule = computeSchedule(modules, CONFIG)
-    const derived = deriveMechanismAllocations(schedule)
-    expect(derived).toHaveLength(2) // leaves B and C; not summary A/K, not U
-    expect(derived.every(d => d.resourceId === 'GRIP' && d.source === 'mechanism')).toBe(true)
-    const b = derived.find(d => d.taskId === 'B')!
-    expect(b.offsetMs).toBe(0)
-    expect(b.durationMs).toBe(300)
+    const owners = buildResourceOwnerIndex(modules)
+    expect(owners.get('GRIP')?.mechanismId).toBe('K') // hierarchy mapping exists
+
+    const noClaims = computeResourceSchedule(schedule, [], [{ id: 'GRIP', name: '抓手' } as Resource])
+    expect(noClaims.placed).toHaveLength(0)
+    expect(noClaims.lanes.find(l => l.resource.id === 'GRIP')?.allocations).toHaveLength(0)
+
+    // Only when an action explicitly claims a window does occupation appear,
+    // and the window is exactly the authored offset/duration — not the action's
+    // full execution span.
+    const explicit: ResourceAllocation[] = [
+      { id: 'c1', taskId: 'C', resourceId: 'GRIP', offsetMs: 100, durationMs: 150 }
+    ]
+    const withClaim = computeResourceSchedule(schedule, explicit, [{ id: 'GRIP', name: '抓手' } as Resource])
+    expect(withClaim.placed).toHaveLength(1)
+    expect(withClaim.placed[0]).toMatchObject({ startMs: 3100, endMs: 3250 })
   })
 
   it('flags a parent claim overlapping a child slot claim but not sibling slots', () => {
@@ -136,5 +147,35 @@ describe('resource phase engine', () => {
     expect(rs.placed[0].effectiveResourceId).toBe('H0')
     expect(rs.byResource.H0).toHaveLength(1)
     expect(rs.byResource.H1).toBeUndefined()
+  })
+})
+
+describe('resource ownership (reverse from mechanism bindings)', () => {
+  it('maps bound resources to their module/mechanism, unbound stay absent', () => {
+    const modules: ModuleData[] = [
+      { ...node('M', 'module', null, 0, 0), moduleName: '管库模块' },
+      { ...node('K', 'mechanism', 'M', 0, 0, 'GRIP'), moduleName: '管库抓手' },
+      { ...node('P', 'mechanism', 'M', 0, 0, 'PLATE'), moduleName: '清洗盘机构' },
+      node('BARE', 'mechanism', 'M', 0, 0) // no resourceId
+    ]
+    const owners = buildResourceOwnerIndex(modules)
+    expect(owners.get('GRIP')).toMatchObject({
+      moduleId: 'M', moduleName: '管库模块', mechanismId: 'K', mechanismName: '管库抓手'
+    })
+    expect(owners.get('PLATE')).toMatchObject({ moduleName: '管库模块', mechanismName: '清洗盘机构' })
+    expect(owners.has('BARE')).toBe(false)
+    expect(owners.has('H0')).toBe(false) // slot has no direct binding
+  })
+
+  it('keeps the first binding when two mechanisms claim one resource', () => {
+    const modules: ModuleData[] = [
+      node('M1', 'module', null, 0, 0),
+      { ...node('K1', 'mechanism', 'M1', 0, 0, 'GRIP'), moduleName: '第一机构' },
+      node('M2', 'module', null, 0, 0),
+      { ...node('K2', 'mechanism', 'M2', 0, 0, 'GRIP'), moduleName: '第二机构' }
+    ]
+    const owners = buildResourceOwnerIndex(modules)
+    expect(owners.get('GRIP')?.mechanismName).toBe('第一机构')
+    expect(owners.size).toBe(1)
   })
 })

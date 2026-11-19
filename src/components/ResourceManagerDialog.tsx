@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
-import { resourceDepth } from '@/lib/resourceTree'
+import { resourceDepth, buildResourceOwnerIndex } from '@/lib/resourceTree'
 import { checkNewName, findNameIssues, NameIssue, translateNameIssue } from '@/lib/nameValidation'
 import { toast } from '@/components/ui/use-toast'
 import { Resource } from '@/types'
@@ -11,6 +11,8 @@ import { Plus, Trash2, ChevronRight, ChevronDown } from 'lucide-react'
 interface Props {
   isOpen: boolean
   onClose: () => void
+  /** When opened from a resource lane, scroll to and highlight this resource. */
+  focusResourceId?: string | null
 }
 
 const PALETTE = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#f97316', '#ec4899']
@@ -32,18 +34,62 @@ function treeOrder(resources: Resource[]): Resource[] {
   return out
 }
 
-export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose }) => {
+export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusResourceId }) => {
   const { t } = useTranslation()
   const {
-    project, addResource, updateResource, removeResource, setResourceMotion, addChildResource
+    project, addResource, updateResource, removeResource, setResourceMotion, addChildResource,
+    setResourceOwner, addAction
   } = useProjectStore()
   const [name, setName] = useState('')
   const [type, setType] = useState('')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  // Which resource's owner picker is currently showing the "new node" form.
+  const [addingOwnerFor, setAddingOwnerFor] = useState<string | null>(null)
+  const [newOwnerName, setNewOwnerName] = useState('')
+  const [newOwnerKind, setNewOwnerKind] = useState<'mechanism' | 'module'>('mechanism')
+  const [newOwnerParent, setNewOwnerParent] = useState('')
   // Name edits stay local until blur, so a rejected duplicate never silently
   // replaces the stored name while the user is still typing.
   const [drafts, setDrafts] = useState<Record<string, string>>({})
-  useEffect(() => { if (!isOpen) setDrafts({}) }, [isOpen])
+  // Editing vs creating are two different actions. When opened from a lane
+  // pencil (focusResourceId set) collapse the "add new" form so there is only
+  // ONE name field on screen; users can still expand it to create another one.
+  const [showAddForm, setShowAddForm] = useState(!focusResourceId)
+  // Focus handling: opened from a lane row → expand its ancestors, scroll to
+  // and highlight that row. Runs once per open/focus pair so later edits do not
+  // keep yanking the scroll position back.
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const lastFocus = useRef<string | null>(null)
+  const [focusPulse, setFocusPulse] = useState<string | null>(null)
+  useEffect(() => {
+    if (!isOpen) { setDrafts({}); lastFocus.current = null; setFocusPulse(null) }
+    else setShowAddForm(!focusResourceId)
+  }, [isOpen, focusResourceId])
+  useEffect(() => {
+    if (!isOpen || !focusResourceId || !project) return
+    const key = `${isOpen}:${focusResourceId}`
+    if (lastFocus.current === key) return
+    lastFocus.current = key
+    const byId = new Map(project.resources.map(r => [r.id, r]))
+    const chain: string[] = []
+    let cur = byId.get(focusResourceId)
+    const guard = new Set<string>()
+    while (cur && !guard.has(cur.id)) {
+      guard.add(cur.id)
+      chain.push(cur.id)
+      cur = cur.parentId ? byId.get(cur.parentId) : undefined
+    }
+    setExpanded(prev => {
+      const next = { ...prev }
+      chain.forEach(id => { next[id] = true })
+      return next
+    })
+    setFocusPulse(focusResourceId)
+    const timer = window.setTimeout(() => {
+      rowRefs.current[focusResourceId]?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }, 60)
+    return () => window.clearTimeout(timer)
+  }, [isOpen, focusResourceId, project])
   const duplicateIds = useMemo(
     () => new Set(findNameIssues(project).filter(i => i.scope === 'resource' && i.reason === 'duplicate').map(i => i.id)),
     [project]
@@ -51,6 +97,41 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose }) => {
 
   if (!isOpen || !project) return null
   const resources = treeOrder(project.resources)
+
+  // Reverse index: resource id → owning flow node, derived the same way as
+  // the resource-lane view, so the dropdown always mirrors what the chart shows.
+  const ownerIndex = buildResourceOwnerIndex(project.modules)
+  const moduleById = new Map(project.modules.map(m => [m.id, m]))
+  const nodeName = (m: { moduleName?: string; actionDescription?: string; code?: string; id: string }) =>
+    m.moduleName || m.actionDescription || m.code || m.id
+  // Ownership options mirror the flow tree: modules and their mechanisms.
+  const moduleOptions = project.modules.filter(m => m.kind === 'module')
+  const mechanismOptions = project.modules.filter(m => m.kind === 'mechanism').map(m => {
+    const parent = m.parentId ? moduleById.get(m.parentId) : undefined
+    const moduleName = parent ? nodeName(parent) : ''
+    return { id: m.id, label: moduleName ? `${moduleName} / ${nodeName(m)}` : nodeName(m) }
+  })
+
+  // Create a new module/mechanism in the FLOW tree and bind it as the owner.
+  // Both views read project.modules, so the flow chart gains the node instantly.
+  const createAndAssignOwner = (resourceId: string) => {
+    const trimmed = newOwnerName.trim()
+    if (!trimmed) return
+    const parentId = newOwnerKind === 'mechanism'
+      ? (newOwnerParent || moduleOptions[0]?.id || null)
+      : null
+    const nodeId = addAction({
+      kind: newOwnerKind,
+      parentId,
+      moduleName: trimmed,
+      actionDescription: trimmed
+    })
+    if (nodeId) setResourceOwner(resourceId, nodeId)
+    setAddingOwnerFor(null)
+    setNewOwnerName('')
+    setNewOwnerKind('mechanism')
+    setNewOwnerParent('')
+  }
 
   const rejectName = (issue: NameIssue) => {
     toast({
@@ -105,8 +186,13 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose }) => {
         </div>
         <div className="p-5 space-y-4">
           <div className="text-xs text-muted-foreground bg-muted/40 border rounded p-2">
-            {t('resource.managerHint', { defaultValue: '模块 / 机构是仪器里的物理模块；资源是在物理模块与流程基础上抽象出的可占用单元。机构可在任务编辑器里映射到资源，映射后其下动作执行期自动占用该资源。' })}
+            {t('resource.managerHint', { defaultValue: '模块 / 机构是仪器里的物理模块；资源是在物理模块与流程基础上抽象出的可占用单元。把资源归属到某模块/机构只表示层级分组，不会让该节点下的动作自动占用资源。占用时间请在流程甘特图里为动作设置。' })}
           </div>
+          {focusPulse && (
+            <div className="text-xs text-primary bg-primary/5 border border-primary/20 rounded p-2">
+              {t('resource.editFocusHint', { defaultValue: '正在编辑下方高亮的资源：直接改名称 / 类型 / 归属即可，改完按回车或点别处自动保存，无需再点“添加”。“添加”只用于新建一个新资源。' })}
+            </div>
+          )}
 
           <section className="border rounded-lg divide-y">
             {resources.map(r => {
@@ -116,7 +202,9 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose }) => {
               const isOpen = expanded[r.id] !== false
               const motion = r.motion
               return (
-                <div key={r.id} className="px-3 py-2" style={{ paddingLeft: 12 + depth * 18 }}>
+                <div key={r.id} ref={el => { rowRefs.current[r.id] = el }}
+                  className={`px-3 py-2 rounded ${focusPulse === r.id ? 'bg-primary/10 ring-1 ring-primary/40' : ''}`}
+                  style={{ paddingLeft: 12 + depth * 18 }}>
                   <div className="flex items-center gap-2">
                     {childCount > 0 ? (
                       <button onClick={() => setExpanded(e => ({ ...e, [r.id]: !isOpen }))} className="p-0.5 text-muted-foreground">
@@ -151,6 +239,73 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
+
+                  {/* Ownership: which flow node (module/mechanism) this resource sits under.
+                      Options come from the flow tree; new nodes are created there too.
+                      Child resources inherit their parent's owner in the lane view. */}
+                  {!r.parentId ? (
+                    <div className="mt-1 ml-6 text-[11px] text-muted-foreground">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <label className="whitespace-nowrap">{t('resource.owner', { defaultValue: '归属模块/机构' })}</label>
+                        <select
+                          className="px-1 py-0.5 text-[11px] border rounded bg-background max-w-[300px]"
+                          value={ownerIndex.get(r.id)?.mechanismId || ownerIndex.get(r.id)?.moduleId || ''}
+                          onChange={e => setResourceOwner(r.id, e.target.value || null)}
+                        >
+                          <option value="">{t('resource.ownerNone', { defaultValue: '（未归属）' })}</option>
+                          {moduleOptions.length > 0 && (
+                            <optgroup label={t('resource.groupModules', { defaultValue: '模块（直属）' })}>
+                              {moduleOptions.map(m => <option key={m.id} value={m.id}>{nodeName(m)}</option>)}
+                            </optgroup>
+                          )}
+                          {mechanismOptions.length > 0 && (
+                            <optgroup label={t('resource.groupMechanisms', { defaultValue: '机构' })}>
+                              {mechanismOptions.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                            </optgroup>
+                          )}
+                        </select>
+                        <button
+                          onClick={() => { setAddingOwnerFor(addingOwnerFor === r.id ? null : r.id); setNewOwnerParent(moduleOptions[0]?.id ?? '') }}
+                          className="px-1.5 py-0.5 text-[11px] border rounded hover:bg-accent whitespace-nowrap"
+                          title={t('resource.ownerNewTip', { defaultValue: '在流程图里新增模块/机构，并设为该资源的归属' })}
+                        >
+                          + {t('resource.ownerNew', { defaultValue: '新增模块/机构' })}
+                        </button>
+                        {ownerIndex.has(r.id) && (
+                          <span className="truncate" title={t('resource.ownerHint', { defaultValue: '归属只决定该资源泳道显示在哪个模块/机构下（层级分组），不代表被该机构下所有流程占用；实际占用来自流程里为动作设置的资源占用窗口。' })}>
+                            {t('resource.ownerMapped', { defaultValue: '已归属 · 仅用于层级分组' })}
+                          </span>
+                        )}
+                      </div>
+                      {addingOwnerFor === r.id && (
+                        <div className="mt-1.5 ml-2 flex items-center gap-1.5 flex-wrap p-1.5 border rounded bg-muted/40">
+                          <select className="px-1 py-0.5 text-[11px] border rounded bg-background"
+                            value={newOwnerKind} onChange={e => setNewOwnerKind(e.target.value as 'mechanism' | 'module')}>
+                            <option value="mechanism">{t('gantt.mechanism', { defaultValue: '机构' })}</option>
+                            <option value="module">{t('gantt.module', { defaultValue: '模块' })}</option>
+                          </select>
+                          <input className="px-1 py-0.5 text-[11px] border rounded bg-background w-32"
+                            value={newOwnerName} onChange={e => setNewOwnerName(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') createAndAssignOwner(r.id) }}
+                            placeholder={t('resource.ownerNewName', { defaultValue: '名称' })} />
+                          {newOwnerKind === 'mechanism' && moduleOptions.length > 0 && (
+                            <select className="px-1 py-0.5 text-[11px] border rounded bg-background"
+                              value={newOwnerParent} onChange={e => setNewOwnerParent(e.target.value)}>
+                              {moduleOptions.map(m => <option key={m.id} value={m.id}>{nodeName(m)}</option>)}
+                            </select>
+                          )}
+                          <button onClick={() => createAndAssignOwner(r.id)} className="px-1.5 py-0.5 text-[11px] rounded bg-primary text-primary-foreground hover:opacity-90">
+                            {t('resource.ownerCreate', { defaultValue: '创建' })}
+                          </button>
+                          <button onClick={() => setAddingOwnerFor(null)} className="px-1 py-0.5 text-[11px]">×</button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-1 ml-6 text-[10px] text-muted-foreground">
+                      {t('resource.ownerInherit', { defaultValue: '归属继承自父资源' })}
+                    </div>
+                  )}
 
                   {isOpen && !r.parentId && (
                     <div className="mt-1.5 ml-6 flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
@@ -187,18 +342,28 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose }) => {
             )}
           </section>
 
-          <section className="border rounded-lg p-3 flex items-end gap-2">
-            <div className="flex-1">
-              <label className="block text-xs text-muted-foreground mb-1">{t('resource.nameLabel', { defaultValue: '名称' })}</label>
-              <input className={inputClass} value={name} onChange={e => setName(e.target.value)} placeholder={t('resource.newName', { defaultValue: '新资源名称（如 管库抓手）' })} onKeyDown={e => { if (e.key === 'Enter') submit() }} />
-            </div>
-            <div className="w-28">
-              <label className="block text-xs text-muted-foreground mb-1">{t('resource.type', { defaultValue: '类型' })}</label>
-              <input className={inputClass} value={type} onChange={e => setType(e.target.value)} placeholder="gripper" />
-            </div>
-            <button onClick={submit} className="px-3 py-1 text-sm rounded bg-primary text-primary-foreground hover:opacity-90 flex items-center gap-1">
-              <Plus className="h-3.5 w-3.5" />{t('resource.add', { defaultValue: '添加' })}
+          <section className="border rounded-lg">
+            <button onClick={() => setShowAddForm(v => !v)} className="w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/50 rounded-lg">
+              <span className="flex items-center gap-1 font-medium">
+                <Plus className="h-3.5 w-3.5" />{t('resource.addNew', { defaultValue: '新建一个资源' })}
+              </span>
+              <span className="text-muted-foreground">{showAddForm ? '−' : '+'}</span>
             </button>
+            {showAddForm && (
+              <div className="px-3 pb-3 flex items-end gap-2 border-t pt-3">
+                <div className="flex-1">
+                  <label className="block text-xs text-muted-foreground mb-1">{t('resource.nameLabel', { defaultValue: '名称' })}</label>
+                  <input className={inputClass} value={name} onChange={e => setName(e.target.value)} placeholder={t('resource.newName', { defaultValue: '新资源名称（如 管库抓手）' })} onKeyDown={e => { if (e.key === 'Enter') submit() }} />
+                </div>
+                <div className="w-28">
+                  <label className="block text-xs text-muted-foreground mb-1">{t('resource.type', { defaultValue: '类型' })}</label>
+                  <input className={inputClass} value={type} onChange={e => setType(e.target.value)} placeholder="gripper" />
+                </div>
+                <button onClick={submit} className="px-3 py-1 text-sm rounded bg-primary text-primary-foreground hover:opacity-90 flex items-center gap-1">
+                  <Plus className="h-3.5 w-3.5" />{t('resource.add', { defaultValue: '添加' })}
+                </button>
+              </div>
+            )}
           </section>
         </div>
         <div className="flex justify-end px-5 py-3 border-t">

@@ -217,6 +217,8 @@ export interface GanttConfig {
   showDependencies: boolean
   /** Show summary bars for actions that own sub-actions. */
   showSummaries: boolean
+  /** Show colored roll-up bars on module/mechanism rows (the top two levels). */
+  showModuleSummaryBars: boolean
 }
 
 // Canvas configuration

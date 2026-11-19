@@ -128,6 +128,9 @@ function App() {
   const [timeScaleOpen, setTimeScaleOpen] = useState(false)
   const [excelOpen, setExcelOpen] = useState(false)
   const [resourceManagerOpen, setResourceManagerOpen] = useState(false)
+  // When opened from a resource lane, focus this resource in the manager so
+  // editing (name / owner / type / motion) is one click away.
+  const [resourceFocusId, setResourceFocusId] = useState<string | null>(null)
   const [allocationTaskId, setAllocationTaskId] = useState<string | null>(null)
   const [editorTaskId, setEditorTaskId] = useState<string | null>(null)
   const [addNode, setAddNode] = useState<{ open: boolean; parentId: string | null }>({ open: false, parentId: null })
@@ -135,6 +138,10 @@ function App() {
   const openAddChild = (parentId: string | null) => setAddNode({ open: true, parentId })
   const openEditor = (id: string) => { setSelectedTask(id); setEditorTaskId(id) }
   const openAllocations = (id: string) => { setSelectedTask(id); setAllocationTaskId(id) }
+  const openResourceManager = (focusId: string | null = null) => {
+    setResourceFocusId(focusId)
+    setResourceManagerOpen(true)
+  }
 
   const {
     requestNewProject, confirmOpen: newProjectConfirmOpen,
@@ -631,7 +638,8 @@ function App() {
                 onEditTask={openEditor}
                 onOpenTimeScale={() => setTimeScaleOpen(true)}
                 onAddChild={openAddChild}
-                onManageResources={() => setResourceManagerOpen(true)}
+                onManageResources={() => openResourceManager(null)}
+                onEditResource={id => openResourceManager(id)}
               />
             ) : (
               <GridCanvas width={800} height={600} />
@@ -706,6 +714,7 @@ function App() {
       />
       <ResourceManagerDialog
         isOpen={resourceManagerOpen}
+        focusResourceId={resourceFocusId}
         onClose={() => setResourceManagerOpen(false)}
       />
       <ResourceAllocationDialog

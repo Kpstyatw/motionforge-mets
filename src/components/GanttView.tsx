@@ -15,7 +15,7 @@ import { formatTime, rulerTicks } from '@/lib/timeScale'
 import { CycleDialog } from './CycleDialog'
 import { ResourceLanes } from './ResourceLanes'
 import { TaskKind } from '@/types'
-import { ChevronDown, ChevronRight, ZoomIn, ZoomOut, Maximize2, Plus, Clock3, Layers3, Repeat2, Settings2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, ZoomIn, ZoomOut, Maximize2, Plus, Clock3, Layers3, Repeat2, Settings2, EyeOff, Eye, AlertTriangle } from 'lucide-react'
 
 /**
  * The Gantt view. Rows follow the four-level hierarchy
@@ -50,16 +50,17 @@ interface GanttViewProps {
   onOpenTimeScale: () => void
   onAddChild: (parentId: string | null) => void
   onManageResources: () => void
+  onEditResource: (resourceId: string) => void
 }
 
 export const GanttView: React.FC<GanttViewProps> = ({
-  onEditTask, onOpenTimeScale, onAddChild, onManageResources
+  onEditTask, onOpenTimeScale, onAddChild, onManageResources, onEditResource
 }) => {
   const { t } = useTranslation()
   const { project, setGanttConfig, setCycleConfig } = useProjectStore()
   const {
     selectedTaskId, setSelectedTask, collapsedTaskIds, toggleCollapsed,
-    expandAll, collapseAllSubActions
+    expandAll, collapseAllSubActions, hiddenTaskIds, hideTasks, unhideAll
   } = useUIStore()
   const currentFrame = useAnimationStore(state => state.currentFrame)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -67,7 +68,7 @@ export const GanttView: React.FC<GanttViewProps> = ({
   const [groupBy, setGroupBy] = useState<GroupBy>('flow')
   const [cycleDialogOpen, setCycleDialogOpen] = useState(false)
 
-  const { config, expansion, schedule, templateSchedule, resourceSchedule, totalMs } = useCycleView()
+  const { config, expansion, schedule, templateSchedule, resourceSchedule, mechanismConflicts, resourceOwners, totalMs } = useCycleView()
   const expanded = expansion.expanded
   const cycleCfg = normalizeCycleConfig(expansion.config)
   const gantt = project?.ganttConfig
@@ -75,13 +76,20 @@ export const GanttView: React.FC<GanttViewProps> = ({
   const rowHeight = gantt?.rowHeight ?? 34
   const showDependencies = gantt?.showDependencies ?? true
   const showSummaries = gantt?.showSummaries ?? true
+  const showModuleSummaryBars = gantt?.showModuleSummaryBars ?? true
 
   // Cycles extend the TIME axis, not the row list: rows always follow the
   // template hierarchy exactly once, and each row draws one bar per cycle.
   const rowSchedule = expanded ? templateSchedule : schedule
+  // Explicitly hidden rows are removed from the tree entirely (they are not
+  // just collapsed). Store ids are template ids, so hiding survives the
+  // single/multi-cycle switch. A hidden parent's subtree was expanded when it
+  // was hidden, so filtering by id here drops every one of its descendants.
+  const hiddenSet = useMemo(() => new Set(hiddenTaskIds), [hiddenTaskIds])
   const rows = useMemo(
-    () => flattenTree(rowSchedule, new Set(collapsedTaskIds)),
-    [rowSchedule, collapsedTaskIds]
+    () => flattenTree(rowSchedule, new Set(collapsedTaskIds))
+      .filter(row => !hiddenSet.has(row.task.id)),
+    [rowSchedule, collapsedTaskIds, hiddenSet]
   )
   const hiddenCount = rowSchedule.tasks.length - rows.length
 
@@ -137,6 +145,21 @@ export const GanttView: React.FC<GanttViewProps> = ({
     if (!box) return
     const available = Math.max(200, box.clientWidth - labelWidth - 48)
     setGanttConfig({ pxPerMs: Math.min(8, Math.max(0.004, available / (totalMs + config.scaleMs))) })
+  }
+
+  // Hide the selected row together with its whole subtree. Ids come from the
+  // template schedule so a row hidden in one cycle mode stays hidden in the
+  // other, and a hidden parent takes all of its descendants with it.
+  const hideSelected = () => {
+    if (!selectedTaskId || !rowSchedule.byId[selectedTaskId]) return
+    const ids: string[] = []
+    const walk = (id: string) => {
+      ids.push(id)
+      ;(rowSchedule.byId[id]?.childIds ?? []).forEach(walk)
+    }
+    walk(selectedTaskId)
+    hideTasks(ids)
+    if (ids.includes(selectedTaskId)) setSelectedTask(null)
   }
 
   const label = (kind: TaskKind) => t(`gantt.kind.${kind}`, { defaultValue: KIND_LABEL[kind] })
@@ -197,10 +220,20 @@ export const GanttView: React.FC<GanttViewProps> = ({
           >
             <Layers3 className="h-3 w-3" />{t('gantt.groupResource', { defaultValue: '资源' })}
             {resourceSchedule.conflicts.length > 0 && (
-              <span className="px-1 rounded bg-red-500 text-white text-[9px]">{resourceSchedule.conflicts.length}</span>
+              <span className="px-1 rounded bg-red-500 text-white text-[9px]"
+                title={t('resource.conflictHint', { defaultValue: '红色为资源占用冲突（仅提示，不自动改时序）。' })}>
+                {resourceSchedule.conflicts.length}
+              </span>
             )}
           </button>
         </div>
+        {mechanismConflicts.conflicts.length > 0 && (
+          <span className="px-1.5 py-0.5 rounded bg-amber-500 text-white text-[10px] flex items-center gap-1"
+            title={t('gantt.mechanismConflictHint', { defaultValue: '橙色为机构并发冲突：同一机构在同一时间执行多个动作（仅提示，不自动改时序）。' })}>
+            <AlertTriangle className="h-3 w-3" />
+            {t('gantt.mechanismConflict', { defaultValue: '机构冲突' })} {mechanismConflicts.conflicts.length}
+          </span>
+        )}
         {/* Single cycle / projected multi-cycle view switch */}
         <div className="flex items-center gap-1 border-l pl-2">
           <div className="flex border rounded p-0.5">
@@ -266,6 +299,26 @@ export const GanttView: React.FC<GanttViewProps> = ({
           {hiddenCount > 0 && <span className="text-muted-foreground">{hiddenCount} {t('gantt.hidden', { defaultValue: '行已隐藏' })}</span>}
         </div>
         <div className="flex items-center gap-1 border-l pl-2">
+          <button
+            onClick={hideSelected}
+            disabled={!selectedTaskId}
+            className="px-2 py-1 border rounded hover:bg-accent disabled:opacity-40 flex items-center gap-1"
+            title={t('gantt.hideSelectedTip', { defaultValue: '从图中移除选中的动作/子动作及其下级' })}
+          >
+            <EyeOff className="h-3.5 w-3.5" />{t('gantt.hideSelected', { defaultValue: '隐藏选中' })}
+          </button>
+          {hiddenTaskIds.length > 0 && (
+            <button
+              onClick={unhideAll}
+              className="px-2 py-1 border rounded hover:bg-accent flex items-center gap-1"
+              title={t('gantt.restoreHiddenTip', { defaultValue: '恢复所有被隐藏的行' })}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              {t('gantt.restoreHidden', { defaultValue: '恢复显示' })} ({hiddenTaskIds.length})
+            </button>
+          )}
+        </div>
+        <div className="flex items-center gap-1 border-l pl-2">
           <button onClick={() => onAddChild(selectedTaskId ? templateIdOf(selectedTaskId) : null)} className="px-2 py-1 border rounded hover:bg-accent flex items-center gap-1">
             <Plus className="h-3 w-3" />{t('gantt.addChild', { defaultValue: '新增下级' })}
           </button>
@@ -276,6 +329,8 @@ export const GanttView: React.FC<GanttViewProps> = ({
       {groupBy === 'resource' ? (
         <ResourceLanes
           resourceSchedule={resourceSchedule}
+          resourceOwners={resourceOwners}
+          schedule={schedule}
           config={config}
           pxPerMs={pxPerMs}
           ticks={ticks}
@@ -284,6 +339,7 @@ export const GanttView: React.FC<GanttViewProps> = ({
           onSelectTask={setSelectedTask}
           onJumpToFlow={id => { setSelectedTask(id); setGroupBy('flow') }}
           onManageResources={onManageResources}
+          onEditResource={onEditResource}
         />
       ) : (
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto">
@@ -414,26 +470,39 @@ export const GanttView: React.FC<GanttViewProps> = ({
                   const barText = cyclePrefix + shortDesc
                   const showText = w > (expanded && cycle > 1 ? 22 : 52)
                   const taskConflicts = resourceSchedule.conflicts.filter(c => c.a.task.id === task.id || c.b.task.id === task.id)
+                  const mechConflicts = mechanismConflicts.conflicts.filter(c => c.a.id === task.id || c.b.id === task.id)
+                  // Conflict bars get a strong outline so the warning is visible even
+                  // when the badge triangle would fall outside the chart's left edge.
+                  const conflictStroke = !task.isSummary && mechConflicts.length > 0 ? '#f59e0b'
+                    : !task.isSummary && taskConflicts.length > 0 ? '#ef4444' : null
+                  // Badge triangles sit just left of the bar; when the bar starts near
+                  // x=0 they would be clipped, so shift the whole set right into view.
+                  const badgeCount = (taskConflicts.length ? 1 : 0) + (mechConflicts.length ? 1 : 0)
+                  const rawCenters = Array.from({ length: badgeCount }, (_, i) => x - 6 - i * 11)
+                  const badgeShift = rawCenters.length && Math.min(...rawCenters) < 7 ? 7 - Math.min(...rawCenters) : 0
+                  const badgeCenters = rawCenters.map(c => c + badgeShift) // index 0 = red, last = amber
                   return (
                   <g key={task.id} data-task-id={task.id} opacity={dimmed ? (expanded && cycle > 1 ? 0.5 : 0.28) : 1}
                     onMouseEnter={() => setHovered(task.id)}
                     onClick={() => setSelectedTask(rowTask.id)}
                     onDoubleClick={() => onEditTask(rowTask.id)}
                     style={{ cursor: 'pointer' }}>
-                    <title>{`${task.code} ${desc}\n${task.startMs} → ${task.endMs} ms (${task.durationMs} ms)${expanded ? `\n周期 C${cycle} / ${cycleCfg.repeats}` : ''}${taskConflicts.length ? `\n⚠ ${taskConflicts.length} ${t('resource.conflicts', { defaultValue: '处资源冲突' })}: ${taskConflicts.map(c => c.resourceName).join(', ')}` : ''}`}</title>
+                    <title>{`${task.code} ${desc}\n${task.startMs} → ${task.endMs} ms (${task.durationMs} ms)${expanded ? `\n周期 C${cycle} / ${cycleCfg.repeats}` : ''}${taskConflicts.length ? `\n🔴 ${taskConflicts.length} ${t('resource.conflicts', { defaultValue: '处资源冲突' })}: ${taskConflicts.map(c => c.resourceName).join(', ')}` : ''}${mechConflicts.length ? `\n🟠 ${t('gantt.mechanismConflict', { defaultValue: '机构并发冲突' })} ${mechConflicts.length} ${t('resource.conflicts', { defaultValue: '处' })}: ${mechConflicts.map(c => `${c.ownerName} × ${mechConflicts.length ? (c.a.id === task.id ? c.b.code : c.a.code) : ''} ${c.overlapMs}ms`).join(', ')}` : ''}`}</title>
                     {task.isSummary ? (
-                      <>
-                        <rect x={x} y={y + barH * 0.28} width={w} height={barH * 0.44}
-                          fill={color} fillOpacity={0.22} stroke={color} strokeOpacity={0.6} rx={2} />
-                        <line x1={x} y1={y + barH} x2={x} y2={y + barH * 0.72} stroke={color} strokeWidth={2} />
-                        <line x1={x + w} y1={y + barH} x2={x + w} y2={y + barH * 0.72} stroke={color} strokeWidth={2} />
-                      </>
+                      showModuleSummaryBars ? (
+                        <>
+                          <rect x={x} y={y + barH * 0.28} width={w} height={barH * 0.44}
+                            fill={color} fillOpacity={0.22} stroke={color} strokeOpacity={0.6} rx={2} />
+                          <line x1={x} y1={y + barH} x2={x} y2={y + barH * 0.72} stroke={color} strokeWidth={2} />
+                          <line x1={x + w} y1={y + barH} x2={x + w} y2={y + barH * 0.72} stroke={color} strokeWidth={2} />
+                        </>
+                      ) : null
                     ) : (
                       <>
                         <rect x={x} y={y} width={w} height={barH} rx={3}
                           fill={color} fillOpacity={isHover ? 0.95 : (expanded && cycle > 1 ? 0.62 : 0.8)}
-                          stroke={selected ? '#ffffff' : color}
-                          strokeWidth={selected ? 2 : 1} />
+                          stroke={conflictStroke ?? (selected ? '#ffffff' : color)}
+                          strokeWidth={conflictStroke ? 2.5 : (selected ? 2 : 1)} />
                         {showText && (
                           <text x={x + 6} y={y + barH / 2 + 4} fontSize={10} fill="#ffffff"
                             style={{ pointerEvents: 'none' }}>
@@ -442,12 +511,20 @@ export const GanttView: React.FC<GanttViewProps> = ({
                         )}
                       </>
                     )}
-                    {/* resource conflict badge */}
+                    {/* resource conflict badge (red) */}
                     {!task.isSummary && taskConflicts.length > 0 && (
                       <g>
-                        <title>{`⚠ ${taskConflicts.map(c => `${c.resourceName} ${c.overlapMs}ms`).join('；')}`}</title>
-                        <path d={`M ${x - 11} ${y - 2} L ${x - 1} ${y - 2} L ${x - 6} ${y + 8} Z`} fill="#ef4444" />
-                        <text x={x - 6} y={y + 7} textAnchor="middle" fontSize={9} fill="#ffffff" style={{ pointerEvents: 'none' }}>!</text>
+                        <title>{`🔴 ${t('resource.conflicts', { defaultValue: '资源冲突' })}: ${taskConflicts.map(c => `${c.resourceName} ${c.overlapMs}ms`).join('；')}`}</title>
+                        <path d={`M ${badgeCenters[0] - 5} ${y - 2} L ${badgeCenters[0] + 5} ${y - 2} L ${badgeCenters[0]} ${y + 8} Z`} fill="#ef4444" />
+                        <text x={badgeCenters[0]} y={y + 7} textAnchor="middle" fontSize={9} fill="#ffffff" style={{ pointerEvents: 'none' }}>!</text>
+                      </g>
+                    )}
+                    {/* mechanism concurrency conflict badge (amber) */}
+                    {!task.isSummary && mechConflicts.length > 0 && (
+                      <g>
+                        <title>{`🟠 ${t('gantt.mechanismConflict', { defaultValue: '机构并发冲突' })}: ${mechConflicts.map(c => `${c.ownerName} × ${c.a.id === task.id ? c.b.code : c.a.code} ${c.overlapMs}ms`).join('；')}`}</title>
+                        <path d={`M ${badgeCenters[badgeCount - 1] - 5} ${y - 2} L ${badgeCenters[badgeCount - 1] + 5} ${y - 2} L ${badgeCenters[badgeCount - 1]} ${y + 8} Z`} fill="#f59e0b" />
+                        <text x={badgeCenters[badgeCount - 1]} y={y + 7} textAnchor="middle" fontSize={9} fill="#ffffff" style={{ pointerEvents: 'none' }}>M</text>
                       </g>
                     )}
                     {/* parent bracket spanning all descendants */}

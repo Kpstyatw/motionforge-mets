@@ -29,10 +29,11 @@ const props = {
   onEditTask: () => {},
   onOpenTimeScale: () => {},
   onAddChild: () => {},
-  onManageResources: () => {}
+  onManageResources: () => {},
+  onEditResource: () => {}
 }
 
-function mk(id: string, kind: 'module' | 'action', parentId: string | null, start: number, dur: number, preds: unknown[] = []): ModuleData {
+function mk(id: string, kind: 'module' | 'mechanism' | 'action' | 'subaction', parentId: string | null, start: number, dur: number, preds: unknown[] = []): ModuleData {
   return {
     id, code: id, kind, parentId, moduleName: '机构', actionDescription: id,
     startMs: start, anchorMs: start, durationMs: dur, endMs: start + dur, startMode: 'auto',
@@ -90,5 +91,33 @@ describe('Gantt multi-cycle layout', () => {
     const wide = barWidth(renderToStaticMarkup(React.createElement(GanttView, props)))
     expect(narrow).toBe(35)
     expect(wide).toBe(70)
+  })
+})
+
+describe('Gantt conflict markers', () => {
+  it('marks both bars of a mechanism conflict that starts at 0ms (badge stays visible)', () => {
+    useProjectStore.getState().loadProject({
+      name: 'conflict-at-zero',
+      modules: [
+        mk('M1', 'module', null, 0, 0),
+        mk('K1', 'mechanism', 'M1', 0, 0),
+        // Two leaves under one mechanism, both starting at 0ms and overlapping.
+        mk('A1', 'action', 'K1', 0, 1000),
+        mk('A2', 'action', 'K1', 0, 1000)
+      ],
+      timeConfig: { scaleMs: 1000, precisionMs: 100, displayUnit: 'ms' },
+      cycleConfig: { enabled: false, cycleMs: 30000, repeats: 1 }
+    } as never)
+    useUIStore.getState().setCollapsedTasks([])
+    const html = renderToStaticMarkup(React.createElement(GanttView, props))
+
+    // Both conflicting actions render with an amber outline (SSR emits <rect ...></rect>).
+    const amberRects = [...html.matchAll(/<rect[^>]*?stroke="#f59e0b"[^>]*?>/g)]
+    expect(amberRects.length).toBeGreaterThanOrEqual(2)
+
+    // The amber "M" badge for a bar at x=0 must be clamped into view (x >= 0).
+    const mTexts = [...html.matchAll(/<text[^>]*?x="([\d.]+)"[^>]*?>M<\/text>/g)]
+    expect(mTexts.length).toBeGreaterThanOrEqual(2)
+    for (const m of mTexts) expect(Number(m[1])).toBeGreaterThanOrEqual(0)
   })
 })

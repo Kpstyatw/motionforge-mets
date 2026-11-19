@@ -22,6 +22,7 @@ export const TimeScaleDialog: React.FC<TimeScaleDialogProps> = ({ isOpen, onClos
   const [cellWidth, setCellWidth] = useState('35')
   const [showDependencies, setShowDependencies] = useState(true)
   const [showSummaries, setShowSummaries] = useState(true)
+  const [showModuleSummaryBars, setShowModuleSummaryBars] = useState(true)
 
   // Snapshot config only when the dialog opens. Depending on project config
   // here would overwrite in-progress edits whenever the store changes (e.g.
@@ -36,6 +37,7 @@ export const TimeScaleDialog: React.FC<TimeScaleDialogProps> = ({ isOpen, onClos
     setCellWidth(String(Math.round((project.ganttConfig?.pxPerMs ?? 0.35) * cfg.scaleMs * 100) / 100))
     setShowDependencies(project.ganttConfig?.showDependencies ?? true)
     setShowSummaries(project.ganttConfig?.showSummaries ?? true)
+    setShowModuleSummaryBars(project.ganttConfig?.showModuleSummaryBars ?? true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
 
@@ -50,7 +52,8 @@ export const TimeScaleDialog: React.FC<TimeScaleDialogProps> = ({ isOpen, onClos
       // pixels per scale division → px/ms
       pxPerMs: Math.min(8, Math.max(0.004, (Number(cellWidth) || 35) / scale)),
       showDependencies,
-      showSummaries
+      showSummaries,
+      showModuleSummaryBars
     })
     onClose()
   }
@@ -119,6 +122,10 @@ export const TimeScaleDialog: React.FC<TimeScaleDialogProps> = ({ isOpen, onClos
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={showSummaries} onChange={e => setShowSummaries(e.target.checked)} />
               {t('timeScale.showSummaries', { defaultValue: '显示父级汇总括号' })}
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={showModuleSummaryBars} onChange={e => setShowModuleSummaryBars(e.target.checked)} />
+              {t('timeScale.showModuleBars', { defaultValue: '显示模块/机构汇总条' })}
             </label>
           </div>
           <div className="text-xs bg-muted/40 border rounded p-2 text-muted-foreground">

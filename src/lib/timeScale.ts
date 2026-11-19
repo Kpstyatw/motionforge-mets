@@ -55,7 +55,8 @@ export const DEFAULT_GANTT_CONFIG: GanttConfig = {
   pxPerMs: 0.35,
   rowHeight: 34,
   showDependencies: true,
-  showSummaries: true
+  showSummaries: true,
+  showModuleSummaryBars: true
 }
 
 export function normalizeTimeConfig(input?: Partial<TimeConfig> | null): TimeConfig {

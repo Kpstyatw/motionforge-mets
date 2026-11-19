@@ -3,6 +3,7 @@ import { useProjectStore } from './useProjectStore'
 import { computeSchedule } from '@/lib/dependencyEngine'
 import { normalizeTimeConfig } from '@/lib/timeScale'
 import { ModuleData, TaskKind } from '@/types'
+import { buildResourceOwnerIndex } from '@/lib/resourceTree'
 
 const cfg = normalizeTimeConfig({ scaleMs: 100, precisionMs: 1 })
 
@@ -245,5 +246,82 @@ describe('hierarchy parent selection', () => {
     expect(store.setTaskParent('M', 'K')).toBe(false)
     expect(store.setTaskParent('A', 'S')).toBe(false)
     expect(useProjectStore.getState().project!.modules.find(m => m.id === 'A')!.parentId).toBe('K')
+  })
+})
+
+describe('setResourceOwner — reverse ownership from the resource side', () => {
+  function loadWithMechanisms() {
+    useProjectStore.getState().loadProject({
+      name: 't',
+      modules: [
+        { ...mk('M1', 0, 0), kind: 'module' as TaskKind, moduleName: '进样', actionDescription: '进样' },
+        { ...mk('MECH1', 0, 0), kind: 'mechanism' as TaskKind, parentId: 'M1', moduleName: '取血针', actionDescription: '取血针' },
+        { ...mk('MECH2', 0, 0), kind: 'mechanism' as TaskKind, parentId: 'M1', moduleName: '前处理盘', actionDescription: '前处理盘' },
+      ],
+      resources: [{ id: 'R1', name: '取血针Y轴电机', type: 'motor' }],
+      timeConfig: { scaleMs: 100, precisionMs: 1, displayUnit: 'ms' }
+    } as never)
+  }
+
+  it('binds a resource to a mechanism so the owner index finds module/mechanism', () => {
+    loadWithMechanisms()
+    useProjectStore.getState().setResourceOwner('R1', 'MECH1')
+    const owners = buildResourceOwnerIndex(useProjectStore.getState().project!.modules)
+    expect(owners.get('R1')?.mechanismId).toBe('MECH1')
+    expect(owners.get('R1')?.moduleName).toBe('进样')
+    expect(owners.get('R1')?.mechanismName).toBe('取血针')
+  })
+
+  it('moves ownership 1:1 — rebinding clears the previous mechanism', () => {
+    loadWithMechanisms()
+    const s = useProjectStore.getState()
+    s.setResourceOwner('R1', 'MECH1')
+    s.setResourceOwner('R1', 'MECH2')
+    const mods = useProjectStore.getState().project!.modules
+    expect(mods.find(m => m.id === 'MECH1')!.resourceId).toBeUndefined()
+    expect(mods.find(m => m.id === 'MECH2')!.resourceId).toBe('R1')
+    const owners = buildResourceOwnerIndex(mods)
+    expect(owners.size).toBe(1)
+    expect(owners.get('R1')?.mechanismId).toBe('MECH2')
+  })
+
+  it('unbinds with null', () => {
+    loadWithMechanisms()
+    const s = useProjectStore.getState()
+    s.setResourceOwner('R1', 'MECH1')
+    s.setResourceOwner('R1', null)
+    expect(buildResourceOwnerIndex(useProjectStore.getState().project!.modules).has('R1')).toBe(false)
+  })
+
+  it('allows a module (not just a mechanism) as the owner', () => {
+    loadWithMechanisms()
+    useProjectStore.getState().setResourceOwner('R1', 'M1')
+    const owners = buildResourceOwnerIndex(useProjectStore.getState().project!.modules)
+    expect(owners.get('R1')?.moduleId).toBe('M1')
+    expect(owners.get('R1')?.moduleName).toBe('进样')
+    expect(owners.get('R1')?.mechanismId).toBe('')
+  })
+
+  it('moves ownership between a mechanism and a module without duplicates', () => {
+    loadWithMechanisms()
+    const s = useProjectStore.getState()
+    s.setResourceOwner('R1', 'MECH1')
+    s.setResourceOwner('R1', 'M1')
+    const mods = useProjectStore.getState().project!.modules
+    expect(mods.find(m => m.id === 'MECH1')!.resourceId).toBeUndefined()
+    expect(mods.find(m => m.id === 'M1')!.resourceId).toBe('R1')
+    expect(buildResourceOwnerIndex(mods).size).toBe(1)
+  })
+
+  it('addAction creates a node in the flow tree that can own a resource', () => {
+    loadWithMechanisms()
+    const s = useProjectStore.getState()
+    const newId = s.addAction({ kind: 'mechanism', parentId: 'M1', moduleName: '加样针', actionDescription: '加样针' })
+    expect(newId).toBeTruthy()
+    useProjectStore.getState().setResourceOwner('R1', newId!)
+    const mods = useProjectStore.getState().project!.modules
+    // The node is in the flow tree (so the flow chart shows it) and owns the resource.
+    expect(mods.some(m => m.id === newId && m.kind === 'mechanism' && m.parentId === 'M1')).toBe(true)
+    expect(buildResourceOwnerIndex(mods).get('R1')?.mechanismName).toBe('加样针')
   })
 })

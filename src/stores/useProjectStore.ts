@@ -193,6 +193,12 @@ interface ProjectState {
   removeResource: (id: string) => void
   /** Map a physical mechanism node to an abstract resource ('' clears it). */
   linkMechanismResource: (moduleId: string, resourceId: string | null) => void
+  /**
+   * Reverse of linkMechanismResource: set which flow node (module or mechanism)
+   * owns a resource. Clears any other node bound to it first, so ownership stays
+   * 1:1 and agrees with buildResourceOwnerIndex. targetId null unbinds it.
+   */
+  setResourceOwner: (resourceId: string, targetId: string | null) => void
   /** Set rotary kinematics on a parent resource; null removes them. */
   setResourceMotion: (resourceId: string, motion: Partial<RotaryMotion> | null) => void
   /** Add a child slot resource under a parent (e.g. a wash-plate hole). */
@@ -757,6 +763,23 @@ export const useProjectStore = create<ProjectState>()(
       const node = state.project.modules.find(m => m.id === moduleId)
       if (!node || node.kind !== 'mechanism') return
       node.resourceId = resourceId ?? undefined
+      state.project.updatedAt = new Date().toISOString()
+      state.unsavedChanges = true
+    }),
+
+    setResourceOwner: (resourceId, targetId) => set(state => {
+      if (!state.project) return
+      // A resource lives under a single node in the centred view. Clear every
+      // other node (module or mechanism) that binds it, then bind the target.
+      for (const m of state.project.modules) {
+        if (m.resourceId === resourceId && m.id !== targetId) m.resourceId = undefined
+      }
+      if (targetId) {
+        const target = state.project.modules.find(m => m.id === targetId)
+        if (target && (target.kind === 'mechanism' || target.kind === 'module')) {
+          target.resourceId = resourceId
+        }
+      }
       state.project.updatedAt = new Date().toISOString()
       state.unsavedChanges = true
     }),

@@ -21,6 +21,7 @@ import {
   NameIssueReason, NameScope, uniqueName
 } from '@/lib/nameValidation'
 import { canBeParentOf, refreshSubtreeLabels } from '@/lib/hierarchy'
+import { autoExpandParentTimes, ParentTimeChange } from '@/lib/parentTimeConstraint'
 
 /**
  * Project store — the only writer of resolved timing.
@@ -169,7 +170,7 @@ interface ProjectState {
   setCycleConfig: (config: Partial<CycleConfig>) => void
   setExcelLayout: (config: Partial<ExcelLayoutConfig>) => void
   setGanttConfig: (config: Partial<GanttConfig>) => void
-  setTaskTiming: (id: string, patch: TimingPatch) => void
+  setTaskTiming: (id: string, patch: TimingPatch) => ParentTimeChange[]
   setStartMode: (id: string, mode: StartMode) => void
   addPredecessor: (taskId: string, fromId: string, type?: DependencyType, lagMs?: number) => boolean
   updatePredecessor: (taskId: string, depId: string, patch: Partial<Dependency>) => boolean
@@ -350,36 +351,44 @@ export const useProjectStore = create<ProjectState>()(
       state.unsavedChanges = true
     }),
 
-    setTaskTiming: (id, patch) => set(state => {
-      if (!state.project) return
-      const cfg = normalizeTimeConfig(state.project.timeConfig)
-      const current = state.project.modules.find(m => m.id === id)
-      if (!current) return
-      const start = current.startMs ?? 0
-      let durationMs = current.durationMs ?? current.moveCount * current.duration
-      if (patch.durationMs !== undefined) {
-        durationMs = Math.max(0, quantize(patch.durationMs, cfg.precisionMs, 'round'))
-      } else if (patch.endMs !== undefined) {
-        durationMs = Math.max(0, quantize(patch.endMs - start, cfg.precisionMs, 'round'))
-      }
-      const hasPredecessors = (current.predecessors?.length ?? 0) > 0
-      const startMode: StartMode = patch.startMs !== undefined && hasPredecessors
-        ? 'manual'
-        : (current.startMode ?? 'auto')
-      const startMs = patch.startMs !== undefined
-        ? Math.max(0, quantize(patch.startMs, cfg.precisionMs, 'round'))
-        : start
-      const next = state.project.modules.map(m => m.id === id
-        ? {
-            ...m,
-            startMs,
-            anchorMs: patch.startMs !== undefined ? startMs : (m.anchorMs ?? m.startMs),
-            durationMs,
-            startMode
-          }
-        : m)
-      commit(state, next)
-    }),
+    setTaskTiming: (id, patch) => {
+      let changes: ParentTimeChange[] = []
+      set(state => {
+        if (!state.project) return
+        const cfg = normalizeTimeConfig(state.project.timeConfig)
+        const current = state.project.modules.find(m => m.id === id)
+        if (!current) return
+        const start = current.startMs ?? 0
+        let durationMs = current.durationMs ?? current.moveCount * current.duration
+        if (patch.durationMs !== undefined) {
+          durationMs = Math.max(0, quantize(patch.durationMs, cfg.precisionMs, 'round'))
+        } else if (patch.endMs !== undefined) {
+          durationMs = Math.max(0, quantize(patch.endMs - start, cfg.precisionMs, 'round'))
+        }
+        const hasPredecessors = (current.predecessors?.length ?? 0) > 0
+        const startMode: StartMode = patch.startMs !== undefined && hasPredecessors
+          ? 'manual'
+          : (current.startMode ?? 'auto')
+        const startMs = patch.startMs !== undefined
+          ? Math.max(0, quantize(patch.startMs, cfg.precisionMs, 'round'))
+          : start
+        const edited = state.project.modules.map(m => m.id === id
+          ? {
+              ...m,
+              startMs,
+              anchorMs: patch.startMs !== undefined ? startMs : (m.anchorMs ?? m.startMs),
+              durationMs,
+              startMode
+            }
+          : m)
+        // Grow action/sub-action ancestors so they still contain the edited
+        // subtree, then commit once with both changes applied.
+        const expanded = autoExpandParentTimes(edited, id, cfg.precisionMs)
+        changes = expanded.changes
+        commit(state, expanded.modules)
+      })
+      return changes
+    },
 
     setStartMode: (id, mode) => set(state => {
       if (!state.project) return

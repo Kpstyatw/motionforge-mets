@@ -99,7 +99,17 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
       return
     }
     const q = Math.max(0, quantize(parsed, config.precisionMs, 'round'))
-    setTaskTiming(task.id, { [field]: q })
+    const expanded = setTaskTiming(task.id, { [field]: q })
+    if (expanded.length > 0) {
+      // Show which ancestors were stretched so the auto-adjust is transparent.
+      const details = expanded
+        .map(c => `${c.name}: ${c.oldStartMs}–${c.oldEndMs} → ${c.newStartMs}–${c.newEndMs} ms`)
+        .join('；')
+      toast({
+        title: t('gantt.parentExtended', { defaultValue: '已自动扩展父动作时间' }),
+        description: t('gantt.parentExtendedDetail', { defaultValue: '为包含子动作时间，已调整上级动作：' }) + ' ' + details
+      })
+    }
   }
 
   const handleParentChange = (parentId: string | null) => {

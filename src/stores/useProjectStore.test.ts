@@ -114,6 +114,47 @@ describe('hierarchy presentation', () => {
   })
 })
 
+describe('parent action auto-expands to contain sub-action timing', () => {
+  const module = (id: string, kind: TaskKind, parentId: string | null, start: number, dur: number): ModuleData => ({
+    ...mk(id, start, dur), kind, parentId
+  })
+
+  it('grows the parent action after a sub-action is pushed past its end', () => {
+    load([
+      module('M', 'module', null, 0, 0),
+      module('K', 'mechanism', 'M', 0, 0),
+      module('A', 'action', 'K', 0, 100),
+      module('S', 'subaction', 'A', 10, 20)
+    ])
+    expect(schedule().byId['A'].endMs).toBe(100)
+
+    // Push sub-action to 150..250, past the action's 100ms end.
+    const changes = useProjectStore.getState().setTaskTiming('S', { startMs: 150, durationMs: 100 })
+
+    const s = schedule()
+    expect(s.byId['S'].startMs).toBe(150)
+    expect(s.byId['S'].endMs).toBe(250)
+    // The resolved schedule (after commit/resolve) must show the grown action.
+    expect(s.byId['A'].startMs).toBe(0)
+    expect(s.byId['A'].endMs).toBeGreaterThanOrEqual(250)
+    expect(changes.some(c => c.id === 'A')).toBe(true)
+  })
+
+  it('reports no manual expansion when the parent is a physical mechanism', () => {
+    load([
+      module('M', 'module', null, 0, 0),
+      module('K', 'mechanism', 'M', 0, 50),
+      module('A', 'action', 'K', 0, 40)
+    ])
+    const changes = useProjectStore.getState().setTaskTiming('A', { durationMs: 200 })
+    // The engine must not emit a manual change for a physical parent.
+    // (The mechanism's own duration still rolls up via the scheduler — that
+    // is existing auto-summary behaviour, deliberately left intact.)
+    expect(changes.some(c => c.id === 'K' || c.id === 'M')).toBe(false)
+    expect(useProjectStore.getState().project!.modules.find(m => m.id === 'A')!.durationMs).toBe(200)
+  })
+})
+
 describe('source file association for one-click save', () => {
   it('remembers the imported workbook and clears it only on a new project', () => {
     load([mk('A', 0, 100)])

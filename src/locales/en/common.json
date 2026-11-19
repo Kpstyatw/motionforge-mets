@@ -352,6 +352,8 @@
     "addNode": "Add hierarchy node",
     "hierarchy": "Module / Mechanism / Action / Sub-action",
     "labelResizeTip": "Drag the right edge to resize; double-click to auto-fit",
+    "parentExtended": "Parent action time auto-extended",
+    "parentExtendedDetail": "Adjusted parent action(s) to contain the sub-action time:",
     "hierarchyPanel": "Hierarchy & actions",
     "startEnd": "Start–End (ms)",
     "zoomIn": "Zoom in",

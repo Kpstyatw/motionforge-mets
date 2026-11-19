@@ -352,6 +352,8 @@
     "addNode": "新增层级节点",
     "hierarchy": "模块 / 机构 / 动作 / 子动作",
     "labelResizeTip": "拖动右边缘调整列宽，双击恢复自适应",
+    "parentExtended": "已自动扩展父动作时间",
+    "parentExtendedDetail": "为包含子动作时间，已调整上级动作：",
     "hierarchyPanel": "层级与操作",
     "startEnd": "起止 (ms)",
     "zoomIn": "放大",

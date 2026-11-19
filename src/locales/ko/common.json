@@ -352,6 +352,8 @@
     "addNode": "계층 노드 추가",
     "hierarchy": "모듈 / 기구 / 동작 / 하위 동작",
     "labelResizeTip": "오른쪽 가장자리를 끌어 너비 조절, 더블클릭하면 자동 맞춤",
+    "parentExtended": "상위 동작 시간을 자동 연장했습니다",
+    "parentExtendedDetail": "하위 동작 시간을 포함하도록 상위 동작을 조정했습니다:",
     "hierarchyPanel": "계층 및 작업",
     "startEnd": "시작–종료 (ms)",
     "zoomIn": "확대",

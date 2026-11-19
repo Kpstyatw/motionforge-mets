@@ -351,6 +351,7 @@
     "addModule": "新增模組",
     "addNode": "新增層級節點",
     "hierarchy": "模組 / 機構 / 動作 / 子動作",
+    "labelResizeTip": "拖曳右緣調整欄寬，按兩下恢復自動調整",
     "hierarchyPanel": "層級與操作",
     "startEnd": "起迄 (ms)",
     "zoomIn": "放大",

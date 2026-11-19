@@ -351,6 +351,7 @@
     "addModule": "新增模块",
     "addNode": "新增层级节点",
     "hierarchy": "模块 / 机构 / 动作 / 子动作",
+    "labelResizeTip": "拖动右边缘调整列宽，双击恢复自适应",
     "hierarchyPanel": "层级与操作",
     "startEnd": "起止 (ms)",
     "zoomIn": "放大",

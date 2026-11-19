@@ -351,6 +351,7 @@
     "addModule": "Add module",
     "addNode": "Add hierarchy node",
     "hierarchy": "Module / Mechanism / Action / Sub-action",
+    "labelResizeTip": "Drag the right edge to resize; double-click to auto-fit",
     "hierarchyPanel": "Hierarchy & actions",
     "startEnd": "Start–End (ms)",
     "zoomIn": "Zoom in",

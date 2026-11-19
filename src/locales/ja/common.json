@@ -351,6 +351,7 @@
     "addModule": "モジュール追加",
     "addNode": "階層ノード追加",
     "hierarchy": "モジュール / 機構 / 動作 / 子動作",
+    "labelResizeTip": "右端をドラッグして幅を調整、ダブルクリックで自動調整に戻す",
     "hierarchyPanel": "階層と操作",
     "startEnd": "開始–終了 (ms)",
     "zoomIn": "拡大",

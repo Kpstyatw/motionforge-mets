@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Toaster } from '@/components/ui/toaster'
 import { LanguageSelector } from '@/components/LanguageSelector'
@@ -17,6 +17,9 @@ import { computeContentSize } from '@/lib/canvasRenderer'
 import { PreferencesDialog } from '@/components/PreferencesDialog'
 import { ExportDialog } from '@/components/ExportDialog'
 import { computeTotalDurationMs } from '@/lib/timingModel'
+import { computeSchedule } from '@/lib/dependencyEngine'
+import { normalizeTimeConfig } from '@/lib/timeScale'
+import { computeLabelWidth, measureTextWidth } from '@/lib/labelWidth'
 import { ShortcutsHelp } from '@/components/ShortcutsHelp'
 import { TooltipButton } from '@/components/ui/tooltip-button'
 import { usePreferencesStore } from '@/stores/usePreferencesStore'
@@ -77,6 +80,44 @@ function App() {
   const canvasContainerRef = useRef<HTMLDivElement>(null)
   // const animationRef = useRef<number | null>(null)
   const [calculatedTotalFrames, setCalculatedTotalFrames] = useState(0)
+
+  // Left hierarchy panel: auto-size to the longest name, with drag-to-resize.
+  const sidePanelConfig = useMemo(() => normalizeTimeConfig(project?.timeConfig), [project?.timeConfig])
+  const autoSideWidth = useMemo(() => {
+    const schedule = computeSchedule(project?.modules ?? [], sidePanelConfig)
+    const byId = new Map(schedule.tasks.map(x => [x.id, x]))
+    const depthOf = (id: string): number => {
+      let d = 0
+      let cur = byId.get(id)
+      while (cur?.parentId && d < 32) { d++; cur = byId.get(cur.parentId) }
+      return d
+    }
+    return computeLabelWidth(
+      schedule.tasks.map(x => ({
+        name: x.module.actionDescription || '',
+        depth: depthOf(x.id),
+        extras: 16 /* arrow */ + 16 /* color dot */ + 64 /* code */ + measureTextWidth(`${x.durationMs}ms`, 10) + 20 /* duration */,
+        fontSize: 12
+      })),
+      { min: 320, max: 1000, indentPerDepth: 12, basePadding: 56 }
+    )
+  }, [project?.modules, sidePanelConfig.scaleMs, sidePanelConfig.precisionMs, sidePanelConfig.displayUnit])
+  const [manualSideWidth, setManualSideWidth] = useState<number | null>(null)
+  const sideWidth = manualSideWidth ?? autoSideWidth
+  const startSideResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startW = sideWidth
+    const onMove = (ev: MouseEvent) => setManualSideWidth(Math.min(1000, Math.max(260, startW + ev.clientX - startX)))
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
   const [preferencesOpen, setPreferencesOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
@@ -348,8 +389,13 @@ function App() {
   return (
     <div className="h-screen flex flex-col bg-background">
       <div className="flex-1 flex min-h-0">
-        {/* Sidebar - Fixed width, always visible */}
-        <div className="w-80 border-r bg-muted/50 overflow-hidden flex flex-col flex-shrink-0">
+        {/* Sidebar - auto-sized to names, drag the right edge to resize, double-click to reset */}
+        <div className="border-r bg-muted/50 overflow-hidden flex flex-col flex-shrink-0 relative"
+          style={{ width: sideWidth }}
+          title={t('gantt.labelResizeTip', { defaultValue: '拖动右边缘调整列宽，双击恢复自适应' })}>
+          <div className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-primary/40 active:bg-primary/60 z-30"
+            onMouseDown={startSideResize}
+            onDoubleClick={() => setManualSideWidth(null)} />
           <div className="flex-1 min-h-0 overflow-hidden">
             {chartView === 'gantt' ? (
               <GanttSidePanel onAddChild={openAddChild} onEditTask={openEditor} />

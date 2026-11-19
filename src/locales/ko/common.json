@@ -351,6 +351,7 @@
     "addModule": "모듈 추가",
     "addNode": "계층 노드 추가",
     "hierarchy": "모듈 / 기구 / 동작 / 하위 동작",
+    "labelResizeTip": "오른쪽 가장자리를 끌어 너비 조절, 더블클릭하면 자동 맞춤",
     "hierarchyPanel": "계층 및 작업",
     "startEnd": "시작–종료 (ms)",
     "zoomIn": "확대",

@@ -10,6 +10,7 @@ import { useCycleView } from '@/hooks/useCycleView'
 import {
   templateIdOf, cycleIndexOf, normalizeCycleConfig
 } from '@/lib/cycleEngine'
+import { measureTextWidth, fitTextToWidth, computeLabelWidth } from '@/lib/labelWidth'
 import { formatTime, rulerTicks } from '@/lib/timeScale'
 import { CycleDialog } from './CycleDialog'
 import { ResourceLanes } from './ResourceLanes'
@@ -26,7 +27,8 @@ import { ChevronDown, ChevronRight, ZoomIn, ZoomOut, Maximize2, Plus, Clock3, La
  * `ScheduleResult`, so a millisecond changed anywhere changes everywhere.
  */
 
-const LABEL_WIDTH = 320
+const LABEL_WIDTH_MIN = 320
+const LABEL_WIDTH_MAX = 1100
 const HEADER_HEIGHT = 46
 
 const KIND_LABEL: Record<TaskKind, string> = {
@@ -83,6 +85,38 @@ export const GanttView: React.FC<GanttViewProps> = ({
   )
   const hiddenCount = rowSchedule.tasks.length - rows.length
 
+  // Auto-size the sticky label column to the longest visible name so long
+  // task names show in full instead of being ellipsised at a fixed width.
+  const autoLabelWidth = useMemo(() => computeLabelWidth(
+    rows.map(row => ({
+      name: row.task.module.actionDescription || '',
+      depth: row.depth,
+      extras: (row.hasChildren ? 18 : 20) + 64 +
+        (expanded && row.task.module.cycleIndex ? 30 : 0) + 36 +
+        measureTextWidth(`${row.task.startMs}–${row.task.endMs}`, 10)
+    })),
+    { min: LABEL_WIDTH_MIN, max: LABEL_WIDTH_MAX }
+  ), [rows, expanded])
+  // Manual resize overrides the auto value; null means "follow content".
+  const [manualLabelWidth, setManualLabelWidth] = useState<number | null>(null)
+  const labelWidth = manualLabelWidth ?? autoLabelWidth
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startW = labelWidth
+    const onMove = (ev: MouseEvent) => {
+      setManualLabelWidth(Math.min(LABEL_WIDTH_MAX, Math.max(LABEL_WIDTH_MIN, startW + ev.clientX - startX)))
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
   const chain = useMemo(() => {
     if (!selectedTaskId || !rowSchedule.byId[selectedTaskId]) return null
     const set = new Set<string>([selectedTaskId])
@@ -101,7 +135,7 @@ export const GanttView: React.FC<GanttViewProps> = ({
   const fit = () => {
     const box = scrollRef.current
     if (!box) return
-    const available = Math.max(200, box.clientWidth - LABEL_WIDTH - 48)
+    const available = Math.max(200, box.clientWidth - labelWidth - 48)
     setGanttConfig({ pxPerMs: Math.min(8, Math.max(0.004, available / (totalMs + config.scaleMs))) })
   }
 
@@ -253,12 +287,18 @@ export const GanttView: React.FC<GanttViewProps> = ({
         />
       ) : (
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto">
-        <div className="flex" style={{ width: LABEL_WIDTH + chartWidth, minHeight: HEADER_HEIGHT + bodyHeight }}>
-          {/* Sticky label column */}
+        <div className="flex" style={{ width: labelWidth + chartWidth, minHeight: HEADER_HEIGHT + bodyHeight }}>
+          {/* Sticky label column — width follows the longest name, draggable to resize */}
           <div
-            className="flex-shrink-0 border-r bg-background z-10"
-            style={{ width: LABEL_WIDTH, position: 'sticky', left: 0 }}
+            className="flex-shrink-0 border-r bg-background z-10 relative"
+            style={{ width: labelWidth, position: 'sticky', left: 0 }}
+            title={t('gantt.labelResizeTip', { defaultValue: '拖动右边缘调整列宽，双击恢复自适应' })}
           >
+            <div
+              className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-primary/40 active:bg-primary/60 z-20"
+              onMouseDown={startResize}
+              onDoubleClick={() => setManualLabelWidth(null)}
+            />
             <div className="flex items-center justify-between px-3 border-b bg-muted/60 font-medium text-xs"
               style={{ height: HEADER_HEIGHT }}>
               <span>{t('gantt.hierarchy', { defaultValue: '模块 / 机构 / 动作 / 子动作' })}</span>
@@ -365,12 +405,13 @@ export const GanttView: React.FC<GanttViewProps> = ({
                   const color = task.module.color || '#3b82f6'
                   const isHover = hovered === task.id
                   const selected = selectedTaskId === rowTask.id
-                  const desc = task.module.actionDescription
-                  const maxChars = Math.max(4, Math.floor((w - (expanded && cycle > 1 ? 16 : 0)) / 8))
-                  const shortDesc = desc.length > maxChars ? `${desc.slice(0, maxChars)}…` : desc
-                  const barText = expanded && cycle > 1
-                    ? (w > 60 ? `C${cycle}·${shortDesc}` : `C${cycle}`)
-                    : shortDesc
+                  const desc = task.module.actionDescription || ''
+                  const cyclePrefix = expanded && cycle > 1 ? `C${cycle}·` : ''
+                  // Reserve 6px padding each side and the cycle prefix, then
+                  // fit the remaining pixels so text never spills past the bar.
+                  const availTextW = Math.max(0, w - 12 - measureTextWidth(cyclePrefix, 10))
+                  const shortDesc = fitTextToWidth(desc, availTextW, 10)
+                  const barText = cyclePrefix + shortDesc
                   const showText = w > (expanded && cycle > 1 ? 22 : 52)
                   const taskConflicts = resourceSchedule.conflicts.filter(c => c.a.task.id === task.id || c.b.task.id === task.id)
                   return (

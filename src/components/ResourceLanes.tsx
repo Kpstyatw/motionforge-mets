@@ -1,10 +1,11 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ResourceSchedule, resourceBusyMs } from '@/lib/resourceScheduler'
 import { templateIdOf } from '@/lib/cycleEngine'
 import { formatTime } from '@/lib/timeScale'
 import { TimeConfig } from '@/types'
 import { Plus, AlertTriangle } from 'lucide-react'
+import { computeLabelWidth } from '@/lib/labelWidth'
 
 /**
  * Resource swim-lane view: one lane per physical resource, with every exact
@@ -13,7 +14,8 @@ import { Plus, AlertTriangle } from 'lucide-react'
  * schedules/allocations the flow Gantt uses — no data is duplicated.
  */
 
-const LABEL_WIDTH = 200
+const LABEL_WIDTH_MIN = 200
+const LABEL_WIDTH_MAX = 900
 const HEADER_HEIGHT = 46
 
 interface ResourceLanesProps {
@@ -38,15 +40,45 @@ export const ResourceLanes: React.FC<ResourceLanesProps> = ({
   const bodyHeight = Math.max(240, lanes.length * rowHeight + 40)
   const conflictIds = useMemo(() => new Set(resourceSchedule.conflicts.map(c => c.id)), [resourceSchedule.conflicts])
 
+  // Auto-size the sticky label column to the longest resource name, with drag-to-resize.
+  const autoLabelWidth = useMemo(() => computeLabelWidth(
+    lanes.map(lane => ({
+      name: lane.resource.name || '',
+      depth: lane.depth ?? 0,
+      extras: 24 + (lane.resource.motion ? 34 : 0) + (lane.resource.slotIndex !== undefined ? 22 : 0) + (lane.conflicts.length ? 34 : 0)
+    })),
+    { min: LABEL_WIDTH_MIN, max: LABEL_WIDTH_MAX, basePadding: 48 }
+  ), [lanes])
+  const [manualLabelWidth, setManualLabelWidth] = useState<number | null>(null)
+  const labelWidth = manualLabelWidth ?? autoLabelWidth
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startW = labelWidth
+    const onMove = (ev: MouseEvent) => setManualLabelWidth(Math.min(LABEL_WIDTH_MAX, Math.max(LABEL_WIDTH_MIN, startW + ev.clientX - startX)))
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
   const barY = (i: number) => i * rowHeight + rowHeight * 0.24
   const barH = rowHeight * 0.52
 
   return (
     <div className="h-full flex flex-col min-h-0 bg-background">
       <div className="flex-1 min-h-0 overflow-auto">
-        <div className="flex" style={{ width: LABEL_WIDTH + chartWidth, minHeight: HEADER_HEIGHT + bodyHeight }}>
-          {/* sticky resource labels */}
-          <div className="flex-shrink-0 border-r bg-background z-10" style={{ width: LABEL_WIDTH, position: 'sticky', left: 0 }}>
+        <div className="flex" style={{ width: labelWidth + chartWidth, minHeight: HEADER_HEIGHT + bodyHeight }}>
+          {/* sticky resource labels — width follows the longest name, draggable */}
+          <div className="flex-shrink-0 border-r bg-background z-10 relative"
+            style={{ width: labelWidth, position: 'sticky', left: 0 }}
+            title={t('gantt.labelResizeTip', { defaultValue: '拖动右边缘调整列宽，双击恢复自适应' })}>
+            <div className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-primary/40 active:bg-primary/60 z-20"
+              onMouseDown={startResize}
+              onDoubleClick={() => setManualLabelWidth(null)} />
             <div className="flex items-center justify-between px-3 border-b bg-muted/60 font-medium text-xs" style={{ height: HEADER_HEIGHT }}>
               <span>{t('resource.laneHeader', { defaultValue: '资源泳道' })}</span>
               <button onClick={onManageResources} className="p-1 rounded hover:bg-accent" title={t('resource.manage', { defaultValue: '管理资源' })}>

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { normalizeTimeConfig } from '@/lib/timeScale'
 import { clampAllocationWindow } from '@/lib/resourceScheduler'
+import { checkNewName, translateNameIssue } from '@/lib/nameValidation'
 import { AlertTriangle } from 'lucide-react'
 
 /**
@@ -69,7 +70,16 @@ export const ResourceAllocationDialog: React.FC<Props> = ({ taskId, onClose }) =
   const quickAddResource = () => {
     const name = quickName.trim()
     if (!name) return
+    const verdict = checkNewName(project, 'resource', name)
+    if (!verdict.ok) {
+      setError(translateNameIssue({ scope: 'resource', id: '', name, reason: verdict.reason ?? 'duplicate' }, t))
+      return
+    }
     const id = addResource({ name })
+    if (!id) {
+      setError(t('nameIssue.duplicateResource', { defaultValue: '资源名称重复：{{name}}', name }))
+      return
+    }
     setNewResourceId(id)
     setQuickName('')
     setQuickAdding(false)

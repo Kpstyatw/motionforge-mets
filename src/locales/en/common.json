@@ -379,6 +379,10 @@
     "name": "Name",
     "stage": "Stage",
     "mechanism": "Mechanism / module",
+    "noParent": "(none · top-level module)",
+    "selectParent": "(select a parent)",
+    "parentHint": "A top-level module has no parent; mechanisms attach to modules, actions to mechanisms, sub-actions can nest further.",
+    "invalidParent": "That node cannot be the parent of this task",
     "timing": "Timing (integer ms)",
     "start": "Start (ms)",
     "duration": "Duration (ms)",
@@ -523,6 +527,15 @@
     "multi": "Multi",
     "multiTip": "Project several read-only cycles",
     "settings": "Cycle length and count"
+  },
+  "nameIssue": {
+    "title": "Duplicate names — cannot save",
+    "blocked": "Resolve duplicate or empty names before saving",
+    "duplicateNode": "Duplicate module/mechanism name: {{name}}",
+    "duplicateResource": "Duplicate resource name: {{name}}",
+    "emptyNode": "Module/mechanism name cannot be empty",
+    "emptyResource": "Resource name cannot be empty",
+    "banner": "{{count}} name issue(s) — fix before saving"
   },
   "save": {
     "ok": "Saved",

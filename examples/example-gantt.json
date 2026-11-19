@@ -1,7 +1,7 @@
 {
   "format": "cycleview-project",
   "formatVersion": 1,
-  "exportedAt": "2026-11-19T06:50:25.035Z",
+  "exportedAt": "2026-11-19T07:04:09.137Z",
   "project": {
     "name": "Untitled Project",
     "modules": [
@@ -44,7 +44,8 @@
         "calculatedStartX": 10,
         "moveCount": 10,
         "duration": 100,
-        "isSequentialAction": false
+        "isSequentialAction": false,
+        "resourceId": "8f4aca03-a261-43f1-b381-837dc93a8571"
       },
       {
         "id": "c6f5f92a-4f20-4203-9e39-6f84ea127a11",
@@ -151,24 +152,7 @@
         "name": "管库抓手"
       }
     ],
-    "allocations": [
-      {
-        "id": "5b8b8966-817c-499f-9b66-e41cae844610",
-        "taskId": "2834c505-0016-4673-9b77-b9e177340d48",
-        "resourceId": "8f4aca03-a261-43f1-b381-837dc93a8571",
-        "offsetMs": 0,
-        "durationMs": 1000,
-        "slotMode": "fixed"
-      },
-      {
-        "id": "3fed9fef-0cc2-4733-8a52-1c38f3eb8131",
-        "taskId": "c6f5f92a-4f20-4203-9e39-6f84ea127a11",
-        "resourceId": "8f4aca03-a261-43f1-b381-837dc93a8571",
-        "offsetMs": 0,
-        "durationMs": 1000,
-        "slotMode": "fixed"
-      }
-    ],
+    "allocations": [],
     "canvasConfig": {
       "cellWidth": 20,
       "cellHeight": 30,
@@ -179,7 +163,7 @@
       "defaultFillColor": "#3b82f6"
     },
     "createdAt": "2026-11-19T02:15:59.204Z",
-    "updatedAt": "2026-11-19T06:50:18.722Z",
+    "updatedAt": "2026-11-19T07:03:52.168Z",
     "version": "2.0.0",
     "schemaVersion": 2,
     "timeConfig": {

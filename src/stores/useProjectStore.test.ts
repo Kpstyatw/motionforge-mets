@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { useProjectStore } from './useProjectStore'
 import { computeSchedule } from '@/lib/dependencyEngine'
 import { normalizeTimeConfig } from '@/lib/timeScale'
-import { ModuleData } from '@/types'
+import { ModuleData, TaskKind } from '@/types'
 
 const cfg = normalizeTimeConfig({ scaleMs: 100, precisionMs: 1 })
 
@@ -127,5 +127,82 @@ describe('source file association for one-click save', () => {
     // Starting a brand-new project drops the stale association.
     useProjectStore.getState().createNewProject()
     expect(useProjectStore.getState().sourceFile).toBeNull()
+  })
+})
+
+describe('unique module/mechanism/resource names', () => {
+  const module = (id: string, name: string, kind: TaskKind = 'module'): ModuleData => ({
+    ...mk(id, 0, 0), kind, moduleName: name, actionDescription: name
+  })
+
+  it('rejects a duplicate mechanism name and keeps the original value', () => {
+    load([module('M', '进样模块'), module('K', '抓手', 'mechanism')])
+    const ok = useProjectStore.getState().setTaskField('K', 'actionDescription', '进样模块')
+    expect(ok).toBe(false)
+    expect(useProjectStore.getState().project!.modules.find(m => m.id === 'K')!.actionDescription).toBe('抓手')
+    expect(useProjectStore.getState().scheduleWarnings[0]).toContain('重复')
+  })
+
+  it('keeps moduleName and actionDescription in sync when renaming a summary node', () => {
+    load([module('M', '进样模块')])
+    expect(useProjectStore.getState().setTaskField('M', 'actionDescription', '加样模块')).toBe(true)
+    const m = useProjectStore.getState().project!.modules.find(x => x.id === 'M')!
+    expect(m.moduleName).toBe('加样模块')
+    expect(m.actionDescription).toBe('加样模块')
+  })
+
+  it('refuses a second resource with the same name but allows blank auto-naming', () => {
+    useProjectStore.getState().createNewProject()
+    const first = useProjectStore.getState().addResource({ name: '管库抓手' })
+    const duplicate = useProjectStore.getState().addResource({ name: ' 管库抓手 ' })
+    useProjectStore.getState().addResource({})
+    expect(first).toBeTruthy()
+    expect(duplicate).toBe('')
+    expect(useProjectStore.getState().project!.resources).toHaveLength(2)
+    expect(useProjectStore.getState().project!.resources[1].name).toBe('新资源')
+
+    const renamed = useProjectStore.getState().updateResource(first, { name: '新资源' })
+    expect(renamed).toBe(false)
+    expect(useProjectStore.getState().project!.resources[0].name).toBe('管库抓手')
+    expect(useProjectStore.getState().project!.resources[1].name).toBe('新资源')
+  })
+
+  it('surfaces duplicates from an imported project as warnings', () => {
+    load([module('K1', '抓手', 'mechanism'), module('K2', '抓手', 'mechanism')])
+    expect(useProjectStore.getState().scheduleWarnings.some(w => w.includes('名称重复'))).toBe(true)
+  })
+})
+
+describe('hierarchy parent selection', () => {
+  const module = (id: string, name: string, kind: TaskKind, parentId: string | null = null): ModuleData => ({
+    ...mk(id, 0, 100), kind, parentId, moduleName: name, actionDescription: name
+  })
+
+  it('reparents an action and refreshes its mechanism label', () => {
+    load([
+      module('M', '进样模块', 'module'),
+      module('K1', '抓手一', 'mechanism', 'M'),
+      module('K2', '抓手二', 'mechanism', 'M'),
+      module('A', '抓取', 'action', 'K1')
+    ])
+    expect(useProjectStore.getState().setTaskParent('A', 'K2')).toBe(true)
+    const modules = useProjectStore.getState().project!.modules
+    expect(modules.find(m => m.id === 'A')!.parentId).toBe('K2')
+    expect(modules.find(m => m.id === 'A')!.moduleName).toBe('抓手二')
+  })
+
+  it('allows a top-level module but rejects invalid or cyclic parents', () => {
+    load([
+      module('M', '整机', 'module'),
+      module('K', '抓手', 'mechanism', 'M'),
+      module('A', '抓取', 'action', 'K'),
+      module('S', '子动作', 'subaction', 'A')
+    ])
+    const store = useProjectStore.getState()
+    expect(store.setTaskParent('M', null)).toBe(true)
+    expect(store.setTaskParent('K', 'A')).toBe(false)
+    expect(store.setTaskParent('M', 'K')).toBe(false)
+    expect(store.setTaskParent('A', 'S')).toBe(false)
+    expect(useProjectStore.getState().project!.modules.find(m => m.id === 'A')!.parentId).toBe('K')
   })
 })

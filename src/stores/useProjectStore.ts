@@ -16,6 +16,11 @@ import {
   normalizeTimeConfig, quantize
 } from '@/lib/timeScale'
 import { DEFAULT_CYCLE_CONFIG, expandCycles, normalizeCycleConfig } from '@/lib/cycleEngine'
+import {
+  checkNewName, formatNameIssue, formatNameIssues, isPhysicalNode,
+  NameIssueReason, NameScope, uniqueName
+} from '@/lib/nameValidation'
+import { canBeParentOf, refreshSubtreeLabels } from '@/lib/hierarchy'
 
 /**
  * Project store — the only writer of resolved timing.
@@ -171,14 +176,19 @@ interface ProjectState {
   removePredecessor: (taskId: string, depId: string) => void
   addAction: (options?: { parentId?: string | null; kind?: TaskKind; moduleName?: string; actionDescription?: string; durationMs?: number; startMs?: number }) => string | null
   deleteTask: (id: string) => void
-  setTaskField: (id: string, field: 'moduleName' | 'actionDescription' | 'stage' | 'color', value: string) => void
+  /** Returns false when a name change was rejected (duplicate or empty). */
+  setTaskField: (id: string, field: 'moduleName' | 'actionDescription' | 'stage' | 'color', value: string) => boolean
+  /** Move a node in the 模块→机构→动作 tree; null makes a top-level module. */
+  setTaskParent: (id: string, parentId: string | null) => boolean
   /** Set a node's colour; optionally push it to every descendant node. */
   setTaskColor: (id: string, color: string, applyToDescendants?: boolean) => void
   recompute: () => void
 
   // ---- Resource allocation edition ----
+  /** Returns '' when the requested name is empty or already taken. */
   addResource: (resource?: Partial<Resource>) => string
-  updateResource: (id: string, patch: Partial<Resource>) => void
+  /** Returns false when the new name is empty or already taken. */
+  updateResource: (id: string, patch: Partial<Resource>) => boolean
   removeResource: (id: string) => void
   /** Map a physical mechanism node to an abstract resource ('' clears it). */
   linkMechanismResource: (moduleId: string, resourceId: string | null) => void
@@ -197,6 +207,11 @@ interface CommitState {
   scheduleWarnings: string[]
 }
 
+/** A rejected name edit must say why — silent no-ops read like a broken UI. */
+function nameWarning(scope: NameScope, name: string, reason: NameIssueReason): string {
+  return formatNameIssue({ scope, id: '', name, reason })
+}
+
 /** Recompute the whole schedule and write the resolved values back. */
 function resolveProject(project: ProjectData): string[] {
   const timeConfig = normalizeTimeConfig(project.timeConfig)
@@ -213,7 +228,7 @@ function resolveProject(project: ProjectData): string[] {
     project.modules, project.allocations, project.cycleConfig, timeConfig.precisionMs
   ).warnings
   project.updatedAt = new Date().toISOString()
-  return [...schedule.warnings, ...cycleWarnings]
+  return [...schedule.warnings, ...cycleWarnings, ...formatNameIssues(project)]
 }
 
 /** Commit a new module list with history + full cascade recompute. */
@@ -254,9 +269,12 @@ export const useProjectStore = create<ProjectState>()(
   }),
 
   loadProject: project => set(state => {
-    state.project = migrateProject(project)
+    const migrated = migrateProject(project)
+    state.project = migrated
     state.unsavedChanges = false
-    state.scheduleWarnings = []
+    // Imported duplicates stay visible and editable, but save() will refuse
+    // the project until they are resolved.
+    state.scheduleWarnings = formatNameIssues(migrated)
     // sourceFile is owned by the import/save flow, not by project data, so a
     // reload (e.g. Excel import) keeps the association until explicitly changed.
     useHistoryStore.getState().clearHistory()
@@ -477,13 +495,19 @@ export const useProjectStore = create<ProjectState>()(
       }
       if (kind === 'mechanism' && !working.some(m => m.id === parentId && m.kind === 'module')) {
         const existing = working.find(m => m.kind === 'module')
-        parentId = existing?.id ?? push(newNode('module', '整机循环', null))
+        parentId = existing?.id ?? push(newNode(
+          'module', uniqueName({ ...project, modules: working }, 'node', '整机循环'), null
+        ))
       }
       if ((kind === 'action' || kind === 'subaction') && !parentId) {
         const module = working.find(m => m.kind === 'module')
-        const moduleId = module?.id ?? push(newNode('module', '整机循环', null))
+        const moduleId = module?.id ?? push(newNode(
+          'module', uniqueName({ ...project, modules: working }, 'node', '整机循环'), null
+        ))
         const mechanism = working.find(m => m.kind === 'mechanism' && m.parentId === moduleId)
-        const mechanismId = mechanism?.id ?? push(newNode('mechanism', '机构 1', moduleId))
+        const mechanismId = mechanism?.id ?? push(newNode(
+          'mechanism', uniqueName({ ...project, modules: working }, 'node', '机构 1'), moduleId
+        ))
         parentId = mechanismId
       }
 
@@ -508,13 +532,27 @@ export const useProjectStore = create<ProjectState>()(
       const durationMs = isSummary ? 0 : quantize(options?.durationMs ?? cfg.scaleMs * 10, cfg.precisionMs, 'ceil')
       const displayName = options?.actionDescription
         ?? (kind === 'module' ? '新模块' : kind === 'mechanism' ? '新机构' : kind === 'subaction' ? '新子动作' : '新动作')
+      // A module/mechanism name is an identity, not a label: reject clashes
+      // instead of creating two nodes that Excel / resources cannot tell apart.
+      const explicitName = options?.moduleName?.trim() || options?.actionDescription?.trim()
+      const authoredName = explicitName
+        ?? (isSummary ? uniqueName({ ...project, modules: working }, 'node', displayName) : displayName)
+      if (isSummary) {
+        const verdict = checkNewName({ ...project, modules: working }, 'node', authoredName)
+        if (!verdict.ok) {
+          set(state => {
+            state.scheduleWarnings = [nameWarning('node', authoredName, verdict.reason ?? 'duplicate')]
+          })
+          return null
+        }
+      }
       const created: ModuleData = {
         id: uuidv4(),
         code: nextCode(working),
         kind,
         parentId,
-        moduleName: isSummary ? (options?.moduleName ?? displayName) : mechanismName,
-        actionDescription: displayName,
+        moduleName: isSummary ? authoredName : mechanismName,
+        actionDescription: isSummary ? authoredName : displayName,
         stage,
         color,
         startMs,
@@ -556,11 +594,65 @@ export const useProjectStore = create<ProjectState>()(
       state.unsavedChanges = true
     }),
 
-    setTaskField: (id, field, value) => set(state => {
-      if (!state.project) return
-      const next = state.project.modules.map(m => m.id === id ? { ...m, [field]: value } : m)
-      commit(state, next)
-    }),
+    setTaskField: (id, field, value) => {
+      const project = get().project
+      if (!project) return false
+      const node = project.modules.find(m => m.id === id)
+      if (!node) return false
+      const trimmed = value.trim()
+      const isNameField = field === 'actionDescription' || field === 'moduleName'
+      if (isNameField && isPhysicalNode(node)) {
+        const verdict = checkNewName(project, 'node', trimmed, id)
+        if (!verdict.ok) {
+          set(state => {
+            state.scheduleWarnings = [nameWarning('node', trimmed, verdict.reason ?? 'duplicate')]
+          })
+          return false
+        }
+      }
+      set(state => {
+        if (!state.project) return
+        const next = state.project.modules.map(m => {
+          if (m.id !== id) return m
+          // A summary node's visible name and its Excel 模块/机构 column are
+          // two mirrors of one physical name; keep them in lockstep.
+          if (isNameField && isPhysicalNode(m)) {
+            return { ...m, moduleName: trimmed, actionDescription: trimmed }
+          }
+          return { ...m, [field]: value }
+        })
+        commit(state, next as ModuleData[])
+      })
+      return true
+    },
+
+    setTaskParent: (id, parentId) => {
+      const project = get().project
+      if (!project) return false
+      const node = project.modules.find(m => m.id === id)
+      if (!node) return false
+      const parent = parentId ? project.modules.find(m => m.id === parentId) : undefined
+      if (parentId && !parent) return false
+      const reject = (message: string) => {
+        set(state => { state.scheduleWarnings = [message] })
+        return false
+      }
+      if (parentId === id || collectDescendantIds(project.modules, id).includes(parentId ?? '')) {
+        return reject('不能把节点移动到自己的下级')
+      }
+      if (!canBeParentOf(node.kind, parent?.kind)) {
+        return reject('该节点不能作为此任务的上级')
+      }
+      if ((node.parentId ?? null) === (parentId ?? null)) return true
+      set(state => {
+        if (!state.project) return
+        const moved = state.project.modules.map(m =>
+          m.id === id ? { ...m, parentId: parentId ?? null } : m
+        )
+        commit(state, refreshSubtreeLabels(moved as ModuleData[], id) as ModuleData[])
+      })
+      return true
+    },
 
     setTaskColor: (id, color, applyToDescendants = false) => set(state => {
       if (!state.project) return
@@ -577,12 +669,24 @@ export const useProjectStore = create<ProjectState>()(
     }),
 
     addResource: (resource) => {
+      const project = get().project
+      if (!project) return ''
+      const explicit = resource?.name?.trim()
+      if (explicit) {
+        const verdict = checkNewName(project, 'resource', explicit)
+        if (!verdict.ok) {
+          set(state => {
+            state.scheduleWarnings = [nameWarning('resource', explicit, verdict.reason ?? 'duplicate')]
+          })
+          return ''
+        }
+      }
       const id = uuidv4()
       set(state => {
         if (!state.project) return
         state.project.resources.push({
           id,
-          name: resource?.name ?? '新资源',
+          name: explicit ?? uniqueName(project, 'resource', '新资源'),
           type: resource?.type,
           color: resource?.color,
           notes: resource?.notes,
@@ -596,14 +700,33 @@ export const useProjectStore = create<ProjectState>()(
       return id
     },
 
-    updateResource: (id, patch) => set(state => {
-      if (!state.project) return
-      const r = state.project.resources.find(x => x.id === id)
-      if (!r) return
-      Object.assign(r, patch)
-      state.project.updatedAt = new Date().toISOString()
-      state.unsavedChanges = true
-    }),
+    updateResource: (id, patch) => {
+      const project = get().project
+      if (!project) return false
+      const r = project.resources.find(x => x.id === id)
+      if (!r) return false
+      let nextPatch = patch
+      if (patch.name !== undefined) {
+        const trimmed = patch.name.trim()
+        const verdict = checkNewName(project, 'resource', trimmed, id)
+        if (!verdict.ok) {
+          set(state => {
+            state.scheduleWarnings = [nameWarning('resource', trimmed, verdict.reason ?? 'duplicate')]
+          })
+          return false
+        }
+        nextPatch = { ...patch, name: trimmed }
+      }
+      set(state => {
+        if (!state.project) return
+        const target = state.project.resources.find(x => x.id === id)
+        if (!target) return
+        Object.assign(target, nextPatch)
+        state.project.updatedAt = new Date().toISOString()
+        state.unsavedChanges = true
+      })
+      return true
+    },
 
     removeResource: id => set(state => {
       if (!state.project) return
@@ -654,7 +777,7 @@ export const useProjectStore = create<ProjectState>()(
         if (!state.project) return
         state.project.resources.push({
           id,
-          name: name ?? `${parent.name} · 槽${index + 1}`,
+          name: uniqueName(project, 'resource', name?.trim() || `${parent.name} · 槽${index + 1}`),
           type: parent.type ? `${parent.type}-slot` : 'slot',
           color: parent.color,
           parentId,

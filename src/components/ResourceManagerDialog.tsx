@@ -1,7 +1,9 @@
-import React, { useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { resourceDepth } from '@/lib/resourceTree'
+import { checkNewName, findNameIssues, NameIssue, translateNameIssue } from '@/lib/nameValidation'
+import { toast } from '@/components/ui/use-toast'
 import { Resource } from '@/types'
 import { Plus, Trash2, ChevronRight, ChevronDown } from 'lucide-react'
 
@@ -38,13 +40,56 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose }) => {
   const [name, setName] = useState('')
   const [type, setType] = useState('')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  // Name edits stay local until blur, so a rejected duplicate never silently
+  // replaces the stored name while the user is still typing.
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  useEffect(() => { if (!isOpen) setDrafts({}) }, [isOpen])
+  const duplicateIds = useMemo(
+    () => new Set(findNameIssues(project).filter(i => i.scope === 'resource' && i.reason === 'duplicate').map(i => i.id)),
+    [project]
+  )
 
   if (!isOpen || !project) return null
   const resources = treeOrder(project.resources)
 
+  const rejectName = (issue: NameIssue) => {
+    toast({
+      variant: 'destructive',
+      title: t('nameIssue.title', { defaultValue: '名称重复，无法保存' }),
+      description: translateNameIssue(issue, t)
+    })
+  }
+
+  const commitName = (r: Resource, text: string) => {
+    const trimmed = text.trim()
+    const issue: NameIssue = {
+      scope: 'resource', id: r.id, name: trimmed,
+      reason: trimmed ? 'duplicate' : 'empty'
+    }
+    if (!trimmed || !updateResource(r.id, { name: trimmed })) {
+      rejectName(issue)
+      setDrafts(prev => ({ ...prev, [r.id]: r.name }))
+      return
+    }
+    setDrafts(prev => {
+      const next = { ...prev }
+      delete next[r.id]
+      return next
+    })
+  }
+
   const submit = () => {
-    if (!name.trim()) return
-    addResource({ name: name.trim(), type: type.trim() || undefined, color: PALETTE[resources.length % PALETTE.length] })
+    const trimmed = name.trim()
+    const verdict = checkNewName(project, 'resource', trimmed)
+    if (!verdict.ok) {
+      rejectName({ scope: 'resource', id: '', name: trimmed, reason: verdict.reason ?? 'duplicate' })
+      return
+    }
+    const id = addResource({ name: trimmed, type: type.trim() || undefined, color: PALETTE[resources.length % PALETTE.length] })
+    if (!id) {
+      rejectName({ scope: 'resource', id: '', name: trimmed, reason: 'duplicate' })
+      return
+    }
     setName('')
     setType('')
   }
@@ -80,8 +125,14 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                     ) : <span className="w-4" />}
                     <input type="color" value={r.color || '#6366f1'} className="w-7 h-7 border-0 bg-transparent p-0 cursor-pointer"
                       onChange={e => updateResource(r.id, { color: e.target.value })} />
-                    <input className="flex-1 min-w-0 px-1 py-0.5 text-sm border rounded bg-background" value={r.name}
-                      onChange={e => updateResource(r.id, { name: e.target.value })} />
+                    <input
+                      className={`flex-1 min-w-0 px-1 py-0.5 text-sm border rounded bg-background ${duplicateIds.has(r.id) ? 'border-red-500 text-red-500' : ''}`}
+                      value={drafts[r.id] ?? r.name}
+                      onChange={e => setDrafts(prev => ({ ...prev, [r.id]: e.target.value }))}
+                      onBlur={e => commitName(r, e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur() }}
+                      title={duplicateIds.has(r.id) ? translateNameIssue({ scope: 'resource', id: r.id, name: r.name, reason: 'duplicate' }, t) : undefined}
+                    />
                     <input className="w-24 px-1 py-0.5 text-xs border rounded bg-background" value={r.type ?? ''} placeholder={t('resource.type', { defaultValue: '类型' })}
                       onChange={e => updateResource(r.id, { type: e.target.value })} />
                     {r.slotIndex !== undefined && (

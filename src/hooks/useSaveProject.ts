@@ -5,6 +5,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { usePreferencesStore } from '@/stores/usePreferencesStore'
 import { useCycleView } from '@/hooks/useCycleView'
 import { flattenTree } from '@/lib/dependencyEngine'
+import { findNameIssues, translateNameIssue } from '@/lib/nameValidation'
 import { saveProjectFile } from '@/services/saveProject'
 import { toast } from '@/components/ui/use-toast'
 
@@ -26,6 +27,19 @@ export function useSaveProject() {
     // A brand-new empty project has nothing worth writing.
     if (!project.modules.length) {
       toast({ variant: 'destructive', title: t('save.empty', { defaultValue: '暂无数据可保存' }) })
+      return false
+    }
+    // One gate for JSON / CSV / Excel and Ctrl+S / Save As: an ambiguous name
+    // makes resources and Excel rows unidentifiable, so never write it out.
+    const nameIssues = findNameIssues(project)
+    if (nameIssues.length) {
+      const details = nameIssues.slice(0, 3).map(issue => translateNameIssue(issue, t)).join('；')
+      toast({
+        variant: 'destructive',
+        title: t('nameIssue.title', { defaultValue: '名称重复，无法保存' }),
+        description: details + (nameIssues.length > 3
+          ? `；+${nameIssues.length - 3}` : '')
+      })
       return false
     }
     setIsSaving(true)

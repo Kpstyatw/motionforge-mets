@@ -379,6 +379,10 @@
     "name": "名前",
     "stage": "段階",
     "mechanism": "所属機構 / モジュール",
+    "noParent": "（なし・最上位モジュール）",
+    "selectParent": "（上位を選択）",
+    "parentHint": "最上位モジュールに上位はありません。機構はモジュール、動作は機構の下に置き、子動作は入れ子にできます。",
+    "invalidParent": "このノードは上位として指定できません",
     "timing": "タイミング（整数 ms）",
     "start": "開始 (ms)",
     "duration": "所要時間 (ms)",
@@ -523,6 +527,15 @@
     "multi": "複数",
     "multiTip": "固定周期で複数の読み取り専用インスタンスを展開",
     "settings": "サイクル長と回数"
+  },
+  "nameIssue": {
+    "title": "名前が重複しています。保存できません",
+    "blocked": "重複または空の名前を修正してから保存してください",
+    "duplicateNode": "モジュール/機構の名前が重複：{{name}}",
+    "duplicateResource": "リソース名が重複：{{name}}",
+    "emptyNode": "モジュール/機構の名前は空にできません",
+    "emptyResource": "リソース名は空にできません",
+    "banner": "名前の問題（{{count}}件）：修正してから保存してください"
   },
   "save": {
     "ok": "保存しました",

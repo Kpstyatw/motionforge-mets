@@ -4,6 +4,8 @@ import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { computeSchedule } from '@/lib/dependencyEngine'
 import { normalizeTimeConfig } from '@/lib/timeScale'
+import { checkNewName, NameIssue, translateNameIssue } from '@/lib/nameValidation'
+import { toast } from '@/components/ui/use-toast'
 import { TaskKind } from '@/types'
 import { Plus } from 'lucide-react'
 
@@ -50,17 +52,30 @@ export const AddNodeDialog: React.FC<AddNodeDialogProps> = ({ parentId, onClose,
 
   const isSummary = kind === 'module' || kind === 'mechanism'
   const submit = () => {
+    const trimmed = name.trim()
+    if (isSummary && trimmed) {
+      const verdict = checkNewName(project, 'node', trimmed)
+      if (!verdict.ok) {
+        const issue: NameIssue = { scope: 'node', id: '', name: trimmed, kind, reason: verdict.reason ?? 'duplicate' }
+        toast({ variant: 'destructive', title: t('nameIssue.title', { defaultValue: '名称重复，无法保存' }), description: translateNameIssue(issue, t) })
+        return
+      }
+    }
     const id = addAction({
       parentId,
       kind,
-      actionDescription: name.trim() || t(`gantt.newKind.${kind}`, { defaultValue: `新${KIND_LABEL[kind]}` }),
+      // A blank name lets the store pick a unique default instead of creating
+      // the second "新模块" / "新机构" in the same project.
+      actionDescription: trimmed || undefined,
       durationMs: isSummary ? 0 : Math.max(0, Number(durationMs) || config.scaleMs * 10),
       startMs: Math.max(0, Number(startMs) || 0)
     })
-    if (id) {
-      setSelectedTask(id)
-      onCreated?.(id)
+    if (!id) {
+      toast({ variant: 'destructive', title: t('nameIssue.title', { defaultValue: '名称重复，无法保存' }), description: t('nameIssue.blocked', { defaultValue: '请先修改重复或空名称后再保存' }) })
+      return
     }
+    setSelectedTask(id)
+    onCreated?.(id)
     onClose()
   }
 

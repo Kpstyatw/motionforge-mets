@@ -379,6 +379,10 @@
     "name": "이름",
     "stage": "단계",
     "mechanism": "소속 기구 / 모듈",
+    "noParent": "(없음 · 최상위 모듈)",
+    "selectParent": "(상위 선택)",
+    "parentHint": "최상위 모듈에는 상위가 없습니다. 기구는 모듈 아래, 동작은 기구 아래에 두고 하위 동작은 중첩할 수 있습니다.",
+    "invalidParent": "해당 노드는 이 작업의 상위가 될 수 없습니다",
     "timing": "타이밍 (정수 ms)",
     "start": "시작 (ms)",
     "duration": "지속 시간 (ms)",
@@ -523,6 +527,15 @@
     "multi": "다중",
     "multiTip": "고정 주기로 여러 읽기 전용 인스턴스 전개",
     "settings": "사이클 길이와 횟수"
+  },
+  "nameIssue": {
+    "title": "이름이 중복되었습니다. 저장할 수 없습니다",
+    "blocked": "중복되거나 빈 이름을 수정한 후 저장하세요",
+    "duplicateNode": "모듈/기구 이름 중복: {{name}}",
+    "duplicateResource": "리소스 이름 중복: {{name}}",
+    "emptyNode": "모듈/기구 이름은 비워둘 수 없습니다",
+    "emptyResource": "리소스 이름은 비워둘 수 없습니다",
+    "banner": "이름 문제 {{count}}건 — 수정 후 저장하세요"
   },
   "save": {
     "ok": "저장되었습니다",

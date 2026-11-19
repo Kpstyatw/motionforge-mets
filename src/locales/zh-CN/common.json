@@ -379,6 +379,10 @@
     "name": "名称",
     "stage": "阶段",
     "mechanism": "所属机构 / 模块",
+    "noParent": "（无 · 一级模块）",
+    "selectParent": "（请选择上级）",
+    "parentHint": "一级模块无上级；机构挂模块，动作挂机构，子动作可继续嵌套。",
+    "invalidParent": "该节点不能作为此任务的上级",
     "timing": "时序（整数毫秒）",
     "start": "开始 (ms)",
     "duration": "持续时长 (ms)",
@@ -523,6 +527,15 @@
     "multi": "多周期",
     "multiTip": "按固定周期展开多个只读实例",
     "settings": "周期时长与数量"
+  },
+  "nameIssue": {
+    "title": "名称重复，无法保存",
+    "blocked": "请先修改重复或空名称后再保存",
+    "duplicateNode": "模块/机构名称重复：{{name}}",
+    "duplicateResource": "资源名称重复：{{name}}",
+    "emptyNode": "模块/机构名称不能为空",
+    "emptyResource": "资源名称不能为空",
+    "banner": "名称问题（{{count}}）：请修改后再保存"
   },
   "save": {
     "ok": "已保存",

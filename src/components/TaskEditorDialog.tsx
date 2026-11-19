@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MODULE_COLORS, useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
-import { computeSchedule, wouldCreateCycle } from '@/lib/dependencyEngine'
+import { collectDescendantIds, computeSchedule, wouldCreateCycle } from '@/lib/dependencyEngine'
+import { canBeParentOf } from '@/lib/hierarchy'
 import { normalizeTimeConfig, parseTimeInput, quantize, describeDuration } from '@/lib/timeScale'
+import { NameIssue, translateNameIssue } from '@/lib/nameValidation'
 import { DependencyType, TaskKind } from '@/types'
 import { toast } from '@/components/ui/use-toast'
 import { Plus, Trash2, Link2, GitBranch, Boxes } from 'lucide-react'
@@ -28,7 +30,7 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
   const { t } = useTranslation()
   const {
     project, setTaskTiming, setStartMode, addPredecessor, updatePredecessor,
-    removePredecessor, setTaskField, setTaskColor, deleteTask, scheduleWarnings,
+    removePredecessor, setTaskField, setTaskParent, setTaskColor, deleteTask, scheduleWarnings,
     linkMechanismResource
   } = useProjectStore()
   const { setSelectedTask } = useUIStore()
@@ -38,9 +40,17 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
     [project?.modules, config.scaleMs, config.precisionMs, config.displayUnit]
   )
   const task = taskId ? schedule.byId[taskId] : undefined
+  // Must stay before every early return: React requires a stable hook order
+  // when the editor opens (taskId goes from null to an actual node).
+  const parentCandidates = useMemo(() => {
+    if (!task || !project) return []
+    const forbidden = new Set([task.id, ...collectDescendantIds(project.modules, task.id)])
+    return schedule.tasks.filter(candidate =>
+      !forbidden.has(candidate.id) && canBeParentOf(task.kind, candidate.kind)
+    )
+  }, [task, project, schedule.tasks])
 
   const [name, setName] = useState('')
-  const [moduleName, setModuleName] = useState('')
   const [stage, setStage] = useState('')
   const [color, setColor] = useState(MODULE_COLORS[0])
   const [applyColorToChildren, setApplyColorToChildren] = useState(false)
@@ -52,7 +62,6 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
   useEffect(() => {
     if (!task) return
     setName(task.module.actionDescription)
-    setModuleName(task.module.moduleName)
     setStage(task.module.stage ?? '')
     setColor(task.module.color ?? MODULE_COLORS[0])
     setApplyColorToChildren(false)
@@ -64,6 +73,23 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
 
   if (!taskId || !task || !project) return null
 
+  /** Names are identities: never leave the field showing a value that was not stored. */
+  const commitName = (text: string) => {
+    const trimmed = text.trim()
+    const ok = setTaskField(task.id, 'actionDescription', trimmed)
+    if (ok) return
+    const issue: NameIssue = {
+      scope: 'node', id: task.id, name: trimmed, kind: task.kind,
+      reason: trimmed ? 'duplicate' : 'empty'
+    }
+    toast({
+      variant: 'destructive',
+      title: t('nameIssue.title', { defaultValue: '名称重复，无法保存' }),
+      description: translateNameIssue(issue, t)
+    })
+    setName(task.module.actionDescription)
+  }
+
   const commitTime = (field: 'startMs' | 'durationMs' | 'endMs', text: string) => {
     const parsed = parseTimeInput(text)
     if (parsed === null) {
@@ -72,6 +98,16 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
     }
     const q = Math.max(0, quantize(parsed, config.precisionMs, 'round'))
     setTaskTiming(task.id, { [field]: q })
+  }
+
+  const handleParentChange = (parentId: string | null) => {
+    if (!setTaskParent(task.id, parentId)) {
+      toast({
+        variant: 'destructive',
+        title: t('gantt.invalidParent', { defaultValue: '该节点不能作为此任务的上级' }),
+        description: scheduleWarnings[0]
+      })
+    }
   }
 
   const candidatePredecessors = schedule.tasks.filter(candidate =>
@@ -138,7 +174,7 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
               <label className={labelClass}>{t('gantt.name', { defaultValue: '名称' })}</label>
               <input className={inputClass} value={name}
                 onChange={e => setName(e.target.value)}
-                onBlur={() => name.trim() && setTaskField(task.id, 'actionDescription', name.trim())} />
+                onBlur={() => commitName(name)} />
             </div>
             <div>
               <label className={labelClass}>{t('gantt.stage', { defaultValue: '阶段' })}</label>
@@ -148,10 +184,22 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
             </div>
             <div className="col-span-3">
               <label className={labelClass}>{t('gantt.mechanism', { defaultValue: '所属机构 / 模块' })}</label>
-              <input className={inputClass} value={moduleName}
-                onChange={e => setModuleName(e.target.value)}
-                onBlur={() => moduleName.trim() && setTaskField(task.id, 'moduleName', moduleName.trim())}
-                disabled={task.isSummary} />
+              <select className={inputClass} value={task.parentId ?? ''}
+                onChange={e => handleParentChange(e.target.value || null)}>
+                {task.kind === 'module' ? (
+                  <option value="">{t('gantt.noParent', { defaultValue: '（无 · 一级模块）' })}</option>
+                ) : (
+                  <option value="" disabled>{t('gantt.selectParent', { defaultValue: '（请选择上级）' })}</option>
+                )}
+                {parentCandidates.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.code} · {c.module.actionDescription || c.module.moduleName}（{t(`gantt.kind.${c.kind}`, { defaultValue: KIND_LABEL[c.kind as TaskKind] })}）
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {t('gantt.parentHint', { defaultValue: '一级模块无上级；机构挂模块，动作挂机构，子动作可继续嵌套。' })}
+              </p>
             </div>
             {task.kind === 'mechanism' && (
               <div className="col-span-3">

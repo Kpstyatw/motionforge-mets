@@ -379,6 +379,10 @@
     "name": "名稱",
     "stage": "階段",
     "mechanism": "所屬機構 / 模組",
+    "noParent": "（無 · 一級模組）",
+    "selectParent": "（請選擇上級）",
+    "parentHint": "一級模組無上級；機構掛模組，動作掛機構，子動作可繼續嵌套。",
+    "invalidParent": "該節點不能作為此任務的上級",
     "timing": "時序（整數毫秒）",
     "start": "開始 (ms)",
     "duration": "持續時長 (ms)",
@@ -523,6 +527,15 @@
     "multi": "多週期",
     "multiTip": "按固定週期展開多個唯讀實例",
     "settings": "週期時長與數量"
+  },
+  "nameIssue": {
+    "title": "名稱重複，無法儲存",
+    "blocked": "請先修改重複或空白名稱後再儲存",
+    "duplicateNode": "模組/機構名稱重複：{{name}}",
+    "duplicateResource": "資源名稱重複：{{name}}",
+    "emptyNode": "模組/機構名稱不可為空",
+    "emptyResource": "資源名稱不可為空",
+    "banner": "名稱問題（{{count}}）：請修改後再儲存"
   },
   "save": {
     "ok": "已儲存",

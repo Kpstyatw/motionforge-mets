@@ -4,6 +4,7 @@ import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { computeSchedule, flattenTree } from '@/lib/dependencyEngine'
 import { describeDuration, formatTime, normalizeTimeConfig } from '@/lib/timeScale'
+import { findNameIssues, translateNameIssue } from '@/lib/nameValidation'
 import { Plus, Layers3, AlertTriangle } from 'lucide-react'
 
 /** Sidebar for the Gantt view: hierarchy actions, stats and diagnostics. */
@@ -30,6 +31,11 @@ export const GanttSidePanel: React.FC<GanttSidePanelProps> = ({ onAddChild, onEd
     schedule.tasks.forEach(x => { result[x.kind] = (result[x.kind] ?? 0) + 1 })
     return result
   }, [schedule])
+  const nameIssues = useMemo(() => findNameIssues(project), [project])
+  const otherWarnings = useMemo(
+    () => [...new Set([...schedule.warnings, ...scheduleWarnings])].filter(w => !/名称重复|名称不能为空/.test(w)),
+    [schedule.warnings, scheduleWarnings]
+  )
 
   if (!project) return null
 
@@ -62,9 +68,24 @@ export const GanttSidePanel: React.FC<GanttSidePanelProps> = ({ onAddChild, onEd
         </button>
       </div>
 
-      {(schedule.warnings.length > 0 || scheduleWarnings.length > 0) && (
+      {nameIssues.length > 0 && (
+        <div className="px-3 py-2 border-b text-[11px] text-red-500 space-y-1">
+          <div className="flex items-center gap-1 font-semibold">
+            <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+            {t('nameIssue.banner', { defaultValue: '名称问题（{{count}}）：请修改后再保存', count: nameIssues.length })}
+          </div>
+          {nameIssues.slice(0, 6).map((issue, i) => (
+            <div key={`${issue.scope}-${issue.id}-${i}`} className="pl-4">· {translateNameIssue(issue, t)}</div>
+          ))}
+          {nameIssues.length > 6 && (
+            <div className="pl-4 text-muted-foreground">+ {nameIssues.length - 6}</div>
+          )}
+        </div>
+      )}
+
+      {otherWarnings.length > 0 && (
         <div className="px-3 py-2 border-b text-[11px] text-amber-400 space-y-1">
-          {[...new Set([...schedule.warnings, ...scheduleWarnings])].slice(0, 4).map((w, i) => (
+          {otherWarnings.slice(0, 4).map((w, i) => (
             <div key={i} className="flex items-start gap-1"><AlertTriangle className="h-3 w-3 mt-0.5 flex-shrink-0" /><span>{w}</span></div>
           ))}
         </div>

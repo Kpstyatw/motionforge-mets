@@ -1,7 +1,12 @@
-import { ModuleData } from '@/types'
+import { ModuleData, Resource, ResourceAllocation, CycleConfig } from '@/types'
 import { RenderConfig, computeContentSize, renderTimingFrameSvg } from '@/lib/canvasRenderer'
 import { computeTotalDurationMs, endMsOf, startMsOf } from '@/lib/timingModel'
 import { computeSchedule, serializePredecessors } from '@/lib/dependencyEngine'
+import { computeResourceSchedule } from '@/lib/resourceScheduler'
+import { buildResourceOwnerIndex } from '@/lib/resourceTree'
+import { expandCycles } from '@/lib/cycleEngine'
+import { renderResourceGanttSvg } from '@/lib/resourceGanttSvg'
+import { normalizeTimeConfig } from '@/lib/timeScale'
 
 /**
  * PDF report.
@@ -21,6 +26,7 @@ import { computeSchedule, serializePredecessors } from '@/lib/dependencyEngine'
 
 export interface PdfReportLabels {
   chartPage: string
+  resourceChartPage?: string
   tablePage: string
   totalCycle: string
   moduleCount: string
@@ -45,6 +51,10 @@ export interface PdfReportInput {
   modules: ModuleData[]
   config: RenderConfig
   labels: PdfReportLabels
+  /** Resource data — when present, a resource Gantt page is appended. */
+  resources?: Resource[]
+  allocations?: ResourceAllocation[]
+  cycleConfig?: CycleConfig
   /** Defaults to now; injectable so the output is reproducible in tests. */
   now?: Date
 }
@@ -119,6 +129,32 @@ export function buildPdfReport(input: PdfReportInput): PdfReportDocument {
   const rows = buildReportRows(modules)
   const c = labels.columns
   const schedule = computeSchedule(modules, { scaleMs: config.scaleMs ?? 100 })
+
+  // Resource Gantt page. Built from the same projection + ResourceSchedule the
+  // app uses, so the printed resource chart matches the on-screen lanes.
+  let resourceChartSvg = ''
+  if (input.resources?.length) {
+    const timeConfig = normalizeTimeConfig({
+      scaleMs: config.scaleMs,
+      precisionMs: config.precisionMs,
+      displayUnit: config.displayUnit
+    })
+    const expansion = expandCycles(modules, input.allocations ?? [], input.cycleConfig, timeConfig.precisionMs)
+    const resourceSchedule = computeResourceSchedule(
+      computeSchedule(expansion.modules, timeConfig),
+      expansion.allocations,
+      input.resources
+    )
+    resourceChartSvg = renderResourceGanttSvg({
+      schedule: resourceSchedule,
+      owners: buildResourceOwnerIndex(modules),
+      config: timeConfig,
+      totalMs: Math.max(schedule.totalMs, 1),
+      width,
+      height: Math.max(160, resourceSchedule.lanes.length * 22 + 40),
+      labelHeading: labels.resourceChartPage
+    })
+  }
   const KIND_TEXT: Record<string, string> = {
     module: '模块', mechanism: '机构', action: '动作', subaction: '子动作'
   }
@@ -183,6 +219,7 @@ export function buildPdfReport(input: PdfReportInput): PdfReportDocument {
                 page-break-after: always; }
   .chart-frame { flex: 1; min-height: 0; }
   .chart-frame svg { width: 100%; height: 100%; }
+  .chart-frame.resource-frame svg { height: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
   thead { display: table-header-group; }
   th, td {
@@ -202,6 +239,10 @@ export function buildPdfReport(input: PdfReportInput): PdfReportDocument {
     <h2>${escapeHtml(labels.chartPage)}</h2>
     <div class="chart-frame">${chartSvg}</div>
   </section>
+  ${resourceChartSvg ? `<section class="chart-page">
+    <h2>${escapeHtml(labels.resourceChartPage ?? '资源甘特图')}</h2>
+    <div class="chart-frame resource-frame">${resourceChartSvg}</div>
+  </section>` : ''}
   <section>
     <h2>${escapeHtml(labels.tablePage)}</h2>
     <table>

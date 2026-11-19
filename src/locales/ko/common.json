@@ -222,7 +222,8 @@
           "intervalTime": "ms/셀",
           "startTime": "시작 ms",
           "endTime": "종료 ms"
-        }
+        },
+        "resourceChartPage": "리소스 간트"
       }
     },
     "mp4": {

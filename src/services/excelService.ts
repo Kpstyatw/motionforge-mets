@@ -4,6 +4,8 @@ import {
   Resource, ResourceAllocation, TaskKind, TimeConfig
 } from '@/types'
 import { ScheduleResult, TreeRow, parsePredecessors } from '@/lib/dependencyEngine'
+import { computeResourceSchedule } from '@/lib/resourceScheduler'
+import { buildResourceOwnerIndex } from '@/lib/resourceTree'
 import {
   buildExcelRows, COLUMN_KEYS, COLUMN_LABELS, ColumnKey,
   KIND_LABELS, MATRIX_MAX_COLUMNS, matrixStep
@@ -38,6 +40,7 @@ const SHEET_MATRIX = '甘特矩阵'
 const SHEET_META = '设置与依赖'
 const SHEET_RESOURCES = '资源'
 const SHEET_ALLOCATIONS = '资源占用'
+const SHEET_RESOURCE_MATRIX = '资源甘特图'
 
 export interface ExcelExportInput {
   project: ProjectData
@@ -373,6 +376,79 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
     row.font = { size: layout.fontSize }
     ;[6, 7, 8, 9].forEach(c => { allocWs.getCell(row.number, c).numFmt = '#,##0' })
   })
+
+  // ---- Sheet 6: resource Gantt matrix ----------------------------------
+  // Mirrors the on-screen resource swim-lanes as a time-bucket matrix: one row
+  // per resource, cells filled where the resource is claimed, conflicts in red.
+  // Derived from the SAME ResourceSchedule the UI uses, so occupancy and
+  // conflicts in the export cannot disagree with the app.
+  const resourceSchedule = computeResourceSchedule(schedule, project.allocations ?? [], project.resources ?? [])
+  const ownerIndex = buildResourceOwnerIndex(project.modules ?? [])
+  const resMatrix = workbook.addWorksheet(SHEET_RESOURCE_MATRIX, { views: [{ state: 'frozen', xSplit: 4, ySplit: 1 }] })
+  const resHeader: string[] = ['资源', '归属模块/机构', '占用次数', '冲突']
+  for (let i = 0; i < bucketCount; i++) resHeader.push(i % labelEvery === 0 ? formatTime(i * stepMs, config) : '')
+  const RES_LEFT = 4
+  resMatrix.columns = resHeader.map((header, i) => ({
+    header,
+    key: i < RES_LEFT ? ['name', 'owner', 'uses', 'conflicts'][i] : `t${i}`,
+    width: i === 0 ? 28 : i === 1 ? 26 : i === 2 ? 10 : i === 3 ? 8 : layout.matrixCellWidth
+  }))
+  styleHeader(resMatrix, 1, resHeader.length, layout)
+  resMatrix.getRow(1).height = layout.headerHeight
+  if (mergeEvery > 1) {
+    const lastTimeCol = RES_LEFT + bucketCount
+    for (let start = RES_LEFT + 1; start <= lastTimeCol; start += mergeEvery) {
+      const end = Math.min(start + mergeEvery - 1, lastTimeCol)
+      const firstTick = start - (RES_LEFT + 1)
+      const lastTick = end - (RES_LEFT + 1)
+      const from = firstTick * stepMs
+      const to = Math.min(schedule.totalMs, (lastTick + 1) * stepMs)
+      const label = firstTick === lastTick ? formatTime(from, config) : `${formatTime(from, config)}–${formatTime(to, config)}`
+      for (let c = start + 1; c <= end; c++) resMatrix.getCell(1, c).value = null
+      resMatrix.getCell(1, start).value = label
+      if (end > start) resMatrix.mergeCells(1, start, 1, end)
+    }
+  }
+
+  for (const lane of resourceSchedule.lanes) {
+    const owner = ownerIndex.get(lane.resource.id)
+    const ownerName = owner ? [owner.moduleName, owner.mechanismName].filter(Boolean).join(' / ') : ''
+    const conflictCount = lane.conflicts.length
+    const uses = lane.allocations.length
+    const row = resMatrix.addRow({
+      name: lane.resource.name,
+      owner: ownerName,
+      uses,
+      conflicts: conflictCount
+    })
+    row.height = layout.matrixRowHeight
+    row.font = { size: layout.fontSize }
+    row.getCell(1).alignment = {
+      vertical: 'middle', horizontal: 'left', indent: Math.max(0, lane.depth ?? 0)
+    }
+    if (lane.resource.color) {
+      row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lighten(lane.resource.color) } }
+    }
+    // Occupied windows. A bucket is conflict-filled if any conflict on this
+    // resource overlaps it, so the red always matches the claim conflict.
+    for (let i = 0; i < bucketCount; i++) {
+      const bucketStart = i * stepMs
+      const bucketEnd = bucketStart + stepMs
+      const cell = row.getCell(i + RES_LEFT + 1)
+      const claimed = lane.allocations.some(a => a.endMs > bucketStart && a.startMs < bucketEnd)
+      const inConflict = lane.conflicts.some(c => c.overlapEndMs > bucketStart && c.overlapStartMs < bucketEnd)
+      if (inConflict) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7C7' } }
+        cell.value = '⚠'
+      } else if (claimed) {
+        cell.fill = {
+          type: 'pattern', pattern: 'solid',
+          fgColor: { argb: argb(lane.resource.color, 'FF8B5CF6') }
+        }
+      }
+      cell.border = { right: { style: 'hair', color: { argb: 'FFF0F1F3' } } }
+    }
+  }
 
   const buffer = await workbook.xlsx.writeBuffer()
   return new Blob([buffer as ArrayBuffer], {

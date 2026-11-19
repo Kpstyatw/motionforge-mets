@@ -222,7 +222,8 @@
           "intervalTime": "ms/セル",
           "startTime": "開始 ms",
           "endTime": "終了 ms"
-        }
+        },
+        "resourceChartPage": "リソースガント"
       }
     },
     "mp4": {

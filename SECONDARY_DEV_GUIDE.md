@@ -226,6 +226,14 @@ interface ResourceAllocation {                                      // 多对多
 - **冲突示例**：周期 1 选中孔 1 放入管 → 孔 1 占用；周期 2 盘转 1 格选中孔 2，孔 1 仍占用但已转离工位；直到孔 1 再次对准工位的周期，任何对“当前选中孔位”的操作若与孔 1 的占用窗口重叠才报冲突——判定始终按孔 1 身份，而非屏幕上它转到哪。
 - **多工位扩展**：若存在多个固定工位且角度不同，用 `stationOffset` 区分；同一周期不同工位选中不同槽位，仍按槽位身份判重。`stepPerCycle = 0` 表示盘不转、每周期选中同一孔位。
 
+#### 5.2.2 导出中的资源甘特图
+
+导出的 Excel 与 PDF 都要带**对应的资源甘特图**，且与屏幕视图同源：
+
+- **Excel**（`excelService.ts`）：在既有「动作时序 / 甘特矩阵 / 设置与依赖 / 资源 / 资源占用」之后新增「资源甘特图」工作表，用与流程甘特矩阵相同的时间桶（`stepMs`/`bucketCount`），每行一条资源泳道（按资源树缩进），单元格按占用窗口填资源色、冲突窗口标红 `⚠`，并列出归属与占用次数。数据来自 `computeResourceSchedule(schedule, allocations, resources)`，导入时按表名读取、忽略该表不影响往返。
+- **PDF**（`pdfExport.ts` + `resourceGanttSvg.ts`）：在动作时序图页之后追加资源甘特图页（矢量 SVG，Chromium 打印管线渲染避免 CJK 字体问题），画泳道标签、时间刻度、占用条与冲突带。`buildPdfReport` 新增可选 `resources/allocations/cycleConfig`，不传则保持旧报告结构。
+- 两者都走 `expandCycles → computeSchedule → computeResourceSchedule` 同一条链，保证多周期投影、占用窗口和冲突与 UI 一致。
+
 ### 5.3 分阶段实施
 
 **阶段 1 — 显式声明 + 结构层（先做）**

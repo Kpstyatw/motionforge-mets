@@ -117,8 +117,12 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onO
         projectName: project.name,
         modules: project.modules,
         config: renderConfig(),
+        resources: project.resources,
+        allocations: project.allocations,
+        cycleConfig: project.cycleConfig,
         labels: {
           chartPage: t('export.pdf.report.chartPage'),
+          resourceChartPage: t('export.pdf.report.resourceChartPage'),
           tablePage: t('export.pdf.report.tablePage'),
           totalCycle: t('export.pdf.report.totalCycle'),
           moduleCount: t('export.pdf.report.moduleCount'),

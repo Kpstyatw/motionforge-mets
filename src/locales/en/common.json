@@ -222,7 +222,8 @@
           "intervalTime": "ms/cell",
           "startTime": "Start ms",
           "endTime": "End ms"
-        }
+        },
+        "resourceChartPage": "Resource Gantt"
       }
     },
     "mp4": {

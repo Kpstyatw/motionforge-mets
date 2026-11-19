@@ -222,7 +222,8 @@
           "intervalTime": "每格 ms",
           "startTime": "開始 ms",
           "endTime": "結束 ms"
-        }
+        },
+        "resourceChartPage": "資源甘特圖"
       }
     },
     "mp4": {

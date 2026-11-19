@@ -28,7 +28,6 @@ import { ModuleData } from '@/types'
 const props = {
   onEditTask: () => {},
   onOpenTimeScale: () => {},
-  onOpenExcel: () => {},
   onAddChild: () => {},
   onManageResources: () => {}
 }

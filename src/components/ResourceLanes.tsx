@@ -58,10 +58,19 @@ export const ResourceLanes: React.FC<ResourceLanesProps> = ({
               return (
                 <div key={lane.resource.id}
                   className={`flex flex-col justify-center px-3 border-b text-xs ${conflicts ? 'bg-red-500/5' : ''}`}
-                  style={{ height: rowHeight }}>
+                  style={{ height: rowHeight, paddingLeft: 12 + (lane.depth ?? 0) * 14 }}>
                   <div className="flex items-center gap-1.5">
+                    {(lane.depth ?? 0) > 0 && <span className="text-muted-foreground text-[10px]">└</span>}
                     <span className="w-2 h-2 rounded-sm flex-shrink-0" style={{ background: lane.resource.color || '#6366f1' }} />
                     <span className="truncate font-medium" title={lane.resource.name}>{lane.resource.name}</span>
+                    {lane.resource.motion && (
+                      <span className="text-[9px] px-1 rounded bg-primary/10 text-primary" title={t('resource.rotaryLane', { defaultValue: '旋转盘：每周期选中一个子槽位' })}>
+                        ↻{lane.resource.motion.slots}
+                      </span>
+                    )}
+                    {lane.resource.slotIndex !== undefined && (
+                      <span className="text-[9px] text-muted-foreground tabular-nums">#{lane.resource.slotIndex}</span>
+                    )}
                     {conflicts > 0 && (
                       <span className="ml-auto px-1 rounded bg-red-500/15 text-red-400 flex items-center gap-0.5 text-[10px]"
                         title={`${conflicts} ${t('resource.conflicts', { defaultValue: '处冲突' })}`}>

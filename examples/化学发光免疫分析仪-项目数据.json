@@ -39,7 +39,8 @@
       "calculatedStartX": 0,
       "moveCount": 0,
       "duration": 100,
-      "isSequentialAction": false
+      "isSequentialAction": false,
+      "resourceId": "RES-SAMPLE-NEEDLE"
     },
     {
       "id": "A-SAMPLE",
@@ -153,7 +154,8 @@
       "calculatedStartX": 0,
       "moveCount": 0,
       "duration": 100,
-      "isSequentialAction": false
+      "isSequentialAction": false,
+      "resourceId": "RES-TUBE-GRIPPER"
     },
     {
       "id": "A-CUP",
@@ -374,7 +376,8 @@
       "calculatedStartX": 45,
       "moveCount": 0,
       "duration": 100,
-      "isSequentialAction": false
+      "isSequentialAction": false,
+      "resourceId": "RES-REAGENT-NEEDLE-1"
     },
     {
       "id": "A-REAGENT1",
@@ -495,7 +498,8 @@
       "calculatedStartX": 78,
       "moveCount": 0,
       "duration": 100,
-      "isSequentialAction": false
+      "isSequentialAction": false,
+      "resourceId": "RES-REAGENT-NEEDLE-2"
     },
     {
       "id": "A-REAGENT2",
@@ -616,7 +620,8 @@
       "calculatedStartX": 109,
       "moveCount": 0,
       "duration": 100,
-      "isSequentialAction": false
+      "isSequentialAction": false,
+      "resourceId": "RES-INCUBATOR"
     },
     {
       "id": "A-INCUBATE",
@@ -757,7 +762,8 @@
       "calculatedStartX": 319,
       "moveCount": 0,
       "duration": 100,
-      "isSequentialAction": false
+      "isSequentialAction": false,
+      "resourceId": "RES-MAG-SEP"
     },
     {
       "id": "A-MAGSEP",
@@ -992,7 +998,8 @@
       "calculatedStartX": 394,
       "moveCount": 0,
       "duration": 100,
-      "isSequentialAction": false
+      "isSequentialAction": false,
+      "resourceId": "RES-SUBSTRATE-NEEDLE"
     },
     {
       "id": "A-TRIGGER",
@@ -1086,7 +1093,8 @@
       "calculatedStartX": 416,
       "moveCount": 0,
       "duration": 100,
-      "isSequentialAction": false
+      "isSequentialAction": false,
+      "resourceId": "RES-PMT"
     },
     {
       "id": "A-DETECT",
@@ -1304,7 +1312,14 @@
       "name": "温育盘",
       "type": "motor",
       "color": "#f59e0b",
-      "notes": "37°C 孵育转盘，步进电机"
+      "notes": "37°C 孵育转盘，步进电机",
+      "motion": {
+        "type": "rotary",
+        "slots": 8,
+        "stepPerCycle": 1,
+        "startSlot": 0,
+        "stationOffset": 0
+      }
     },
     {
       "id": "RES-MAG-SEP",
@@ -1347,6 +1362,70 @@
       "type": "fixture",
       "color": "#84cc16",
       "notes": "承接样本加样的反应杯工位"
+    },
+    {
+      "id": "RES-INCUBATOR-H1",
+      "name": "温育盘孔位 1",
+      "type": "slot",
+      "parentId": "RES-INCUBATOR",
+      "slotIndex": 0,
+      "color": "#f59e0b"
+    },
+    {
+      "id": "RES-INCUBATOR-H2",
+      "name": "温育盘孔位 2",
+      "type": "slot",
+      "parentId": "RES-INCUBATOR",
+      "slotIndex": 1,
+      "color": "#f59e0b"
+    },
+    {
+      "id": "RES-INCUBATOR-H3",
+      "name": "温育盘孔位 3",
+      "type": "slot",
+      "parentId": "RES-INCUBATOR",
+      "slotIndex": 2,
+      "color": "#f59e0b"
+    },
+    {
+      "id": "RES-INCUBATOR-H4",
+      "name": "温育盘孔位 4",
+      "type": "slot",
+      "parentId": "RES-INCUBATOR",
+      "slotIndex": 3,
+      "color": "#f59e0b"
+    },
+    {
+      "id": "RES-INCUBATOR-H5",
+      "name": "温育盘孔位 5",
+      "type": "slot",
+      "parentId": "RES-INCUBATOR",
+      "slotIndex": 4,
+      "color": "#f59e0b"
+    },
+    {
+      "id": "RES-INCUBATOR-H6",
+      "name": "温育盘孔位 6",
+      "type": "slot",
+      "parentId": "RES-INCUBATOR",
+      "slotIndex": 5,
+      "color": "#f59e0b"
+    },
+    {
+      "id": "RES-INCUBATOR-H7",
+      "name": "温育盘孔位 7",
+      "type": "slot",
+      "parentId": "RES-INCUBATOR",
+      "slotIndex": 6,
+      "color": "#f59e0b"
+    },
+    {
+      "id": "RES-INCUBATOR-H8",
+      "name": "温育盘孔位 8",
+      "type": "slot",
+      "parentId": "RES-INCUBATOR",
+      "slotIndex": 7,
+      "color": "#f59e0b"
     }
   ],
   "allocations": [
@@ -1539,6 +1618,15 @@
       "offsetMs": 0,
       "durationMs": 1600,
       "notes": "稀释分支复用抓手 → 与 S06/S07 冲突"
+    },
+    {
+      "id": "ALLOC-ACTIVE-SLOT",
+      "taskId": "S20",
+      "resourceId": "RES-INCUBATOR",
+      "slotMode": "activeSlot",
+      "offsetMs": 0,
+      "durationMs": 200,
+      "notes": "演示：当前周期选中的温育孔位"
     }
   ],
   "canvasConfig": {
@@ -1563,6 +1651,7 @@
     "rowHeight": 22,
     "headerHeight": 30,
     "columnWidths": {
+      "code": 14,
       "id": 12,
       "level": 8,
       "module": 20,
@@ -1580,6 +1669,7 @@
     "matrixCellWidth": 3.5,
     "matrixRowHeight": 18,
     "matrixStepMs": 0,
+    "matrixLabelEvery": 0,
     "fontSize": 10
   },
   "ganttConfig": {

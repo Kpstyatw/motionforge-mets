@@ -1,7 +1,8 @@
 import Papa from 'papaparse'
-import { ModuleData, TimeConfig } from '@/types'
+import { ModuleData, ProjectData, TimeConfig } from '@/types'
 import { computeSchedule, serializePredecessors } from '@/lib/dependencyEngine'
 import { DEFAULT_TIME_CONFIG } from '@/lib/timeScale'
+import { normalizeProjectSnapshot, PROJECT_META_COLUMN } from '@/services/jsonProject'
 
 export interface ExportOptions {
   format: 'csv' | 'pdf'
@@ -13,15 +14,15 @@ export interface ExportOptions {
  * addition to the upstream five, so a file exported here round-trips with
  * exact timing, hierarchy and dependency edges.
  */
-export function exportToCSV(
+export function buildProjectCSV(
   modules: ModuleData[],
   options: ExportOptions = { format: 'csv' },
-  timeConfig: TimeConfig = DEFAULT_TIME_CONFIG
-): void {
-  try {
+  timeConfig: TimeConfig = DEFAULT_TIME_CONFIG,
+  project?: ProjectData
+): string {
     const schedule = computeSchedule(modules, timeConfig)
     const codeOf = new Map(modules.map(m => [m.id, m.code ?? m.id]))
-    const csvData = modules.map(module => {
+    const csvData: Array<Record<string, unknown>> = modules.map(module => {
       const resolved = schedule.byId[module.id]
       const startMs = resolved?.startMs ?? module.startMs ?? 0
       const durationMs = resolved?.durationMs ?? module.durationMs ?? 0
@@ -31,6 +32,7 @@ export function exportToCSV(
       return {
         id: module.id,
         code: module.code ?? module.id,
+        kind: module.kind ?? 'action',
         module: module.moduleName,
         action: module.actionDescription,
         startPosition,
@@ -54,7 +56,24 @@ export function exportToCSV(
       }
     })
 
-    const csv = Papa.unparse(csvData, { header: true, delimiter: ',', quotes: true })
+    if (project && csvData.length > 0) {
+      // Compact JSON: one physical CSV row per task, even with the metadata.
+      csvData[0][PROJECT_META_COLUMN] = JSON.stringify(normalizeProjectSnapshot(project))
+    }
+    return Papa.unparse(csvData, { header: true, delimiter: ',', quotes: true })
+}
+
+/**
+ * CSV export kept for the Export dialog. Save/Save As uses buildProjectCSV with
+ * a project snapshot so metadata columns survive the round-trip too.
+ */
+export function exportToCSV(
+  modules: ModuleData[],
+  options: ExportOptions = { format: 'csv' },
+  timeConfig: TimeConfig = DEFAULT_TIME_CONFIG
+): void {
+  try {
+    const csv = buildProjectCSV(modules, options, timeConfig)
     downloadFile(csv, 'cycleview-gantt-export.csv', 'text/csv')
   } catch (error) {
     console.error('CSV export failed:', error)

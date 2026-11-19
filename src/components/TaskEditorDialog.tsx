@@ -28,7 +28,8 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
   const { t } = useTranslation()
   const {
     project, setTaskTiming, setStartMode, addPredecessor, updatePredecessor,
-    removePredecessor, setTaskField, setTaskColor, deleteTask, scheduleWarnings
+    removePredecessor, setTaskField, setTaskColor, deleteTask, scheduleWarnings,
+    linkMechanismResource
   } = useProjectStore()
   const { setSelectedTask } = useUIStore()
   const config = normalizeTimeConfig(project?.timeConfig)
@@ -152,6 +153,21 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
                 onBlur={() => moduleName.trim() && setTaskField(task.id, 'moduleName', moduleName.trim())}
                 disabled={task.isSummary} />
             </div>
+            {task.kind === 'mechanism' && (
+              <div className="col-span-3">
+                <label className={labelClass}>{t('resource.mapResource', { defaultValue: '映射资源（物理模块 → 抽象资源）' })}</label>
+                <select className={inputClass} value={task.module.resourceId ?? ''}
+                  onChange={e => linkMechanismResource(task.id, e.target.value || null)}>
+                  <option value="">{t('resource.noMapping', { defaultValue: '（不映射 · 不自动占用）' })}</option>
+                  {(project?.resources ?? []).filter(r => !r.parentId).map(r => (
+                    <option key={r.id} value={r.id}>{r.name}{r.type ? ` · ${r.type}` : ''}</option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  {t('resource.mapHint', { defaultValue: '映射后，本机构下所有动作的执行窗口会自动占用该资源（仅派生，不写入占用表）。' })}
+                </p>
+              </div>
+            )}
             <div className="col-span-3 border-t pt-3">
               <label className={labelClass}>{t('gantt.color', { defaultValue: '颜色' })}</label>
               <div className="flex flex-wrap items-center gap-2">

@@ -24,6 +24,7 @@ export function SpeedSettingsDialog({ isOpen, onClose }: SpeedSettingsDialogProp
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
+      setTempSpeed(speed)
       onClose()
     }
   }

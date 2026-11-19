@@ -21,6 +21,7 @@ export const ResourceAllocationDialog: React.FC<Props> = ({ taskId, onClose }) =
     project, addResource, addAllocation, updateAllocation, removeAllocation
   } = useProjectStore()
   const [newResourceId, setNewResourceId] = useState('')
+  const [newSlotMode, setNewSlotMode] = useState<'fixed' | 'activeSlot'>('fixed')
   const [offset, setOffset] = useState('0')
   const [duration, setDuration] = useState('0')
   const [error, setError] = useState<string | null>(null)
@@ -56,7 +57,7 @@ export const ResourceAllocationDialog: React.FC<Props> = ({ taskId, onClose }) =
       setError(t('resource.zeroDuration', { defaultValue: '占用时长必须大于 0（且在动作时长内）' }))
       return
     }
-    addAllocation({ taskId, resourceId, ...clamped })
+    addAllocation({ taskId, resourceId, slotMode: newSlotMode, ...clamped })
     setError(null)
     setOffset('0')
     setDuration('0')
@@ -93,6 +94,15 @@ export const ResourceAllocationDialog: React.FC<Props> = ({ taskId, onClose }) =
               {claims.map(a => (
                 <div key={a.id} className="flex items-center gap-2 px-3 py-2 text-sm">
                   <span className="font-medium flex-1 truncate">{resourceName(a.resourceId)}</span>
+                  {a.slotMode === 'activeSlot' && (
+                    <span className="text-[10px] px-1 rounded bg-primary/10 text-primary"
+                      title={t('resource.activeSlotHint', { defaultValue: '按动作所属周期解析到当前选中槽位' })}>
+                      {t('resource.activeSlot', { defaultValue: '当前槽位' })}
+                    </span>
+                  )}
+                  {a.source && a.source !== 'manual' && (
+                    <span className="text-[10px] px-1 rounded bg-muted text-muted-foreground">{a.source}</span>
+                  )}
                   <label className="text-xs text-muted-foreground">{t('resource.offset', { defaultValue: '偏移' })}</label>
                   <input className="w-20 px-1 py-0.5 text-xs border rounded bg-background text-right tabular-nums"
                     type="number" min={0} defaultValue={a.offsetMs}
@@ -146,6 +156,13 @@ export const ResourceAllocationDialog: React.FC<Props> = ({ taskId, onClose }) =
                     </button>
                   </div>
                 )}
+              </div>
+              <div className="col-span-3">
+                <label className={labelClass}>{t('resource.targetMode', { defaultValue: '占用目标' })}</label>
+                <select className={inputClass} value={newSlotMode} onChange={e => setNewSlotMode(e.target.value as 'fixed' | 'activeSlot')}>
+                  <option value="fixed">{t('resource.fixedSlot', { defaultValue: '该资源本身' })}</option>
+                  <option value="activeSlot">{t('resource.activeSlot', { defaultValue: '当前选中槽位（旋转盘）' })}</option>
+                </select>
               </div>
               <div>
                 <label className={labelClass}>{t('resource.offset', { defaultValue: '偏移 (ms)' })}</label>

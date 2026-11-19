@@ -48,6 +48,14 @@ export interface ShortcutDef {
 export const SHORTCUTS: ShortcutDef[] = [
   // File
   {
+    command: 'open-project',
+    labelKey: 'menu.file.open',
+    category: 'file',
+    keys: 'Ctrl+O',
+    accelerator: 'CmdOrCtrl+O',
+    bindings: [{ key: 'o', ctrl: true }]
+  },
+  {
     command: 'import-csv',
     labelKey: 'menu.file.import',
     category: 'file',
@@ -216,9 +224,9 @@ export const SHORTCUTS: ShortcutDef[] = [
     command: 'speed-settings',
     labelKey: 'menu.animation.speedSettings',
     category: 'animation',
-    keys: 'Ctrl+Shift+S',
-    accelerator: 'CmdOrCtrl+Shift+S',
-    bindings: [{ key: 's', ctrl: true, shift: true }]
+    keys: 'Ctrl+Alt+S',
+    accelerator: 'CmdOrCtrl+Alt+S',
+    bindings: [{ key: 's', ctrl: true, alt: true }]
   },
   {
     command: 'toggle-loop',

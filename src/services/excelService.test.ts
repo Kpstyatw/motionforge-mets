@@ -255,6 +255,30 @@ describe('Gantt ⇄ Excel', () => {
     expect(a2.durationMs).toBe(400)
   })
 
+  it('round-trips resource tree, rotary motion and activeSlot claims', async () => {
+    const project = fixture()
+    project.modules[1] = { ...project.modules[1], resourceId: 'PLATE' }
+    project.resources = [
+      { id: 'PLATE', name: '清洗盘', motion: { type: 'rotary', slots: 4, stepPerCycle: 1, startSlot: 0, stationOffset: 0 } },
+      { id: 'H0', name: '孔1', parentId: 'PLATE', slotIndex: 0 },
+      { id: 'H1', name: '孔2', parentId: 'PLATE', slotIndex: 1 }
+    ]
+    project.allocations = [
+      { id: 'slotClaim', taskId: 'A', resourceId: 'PLATE', slotMode: 'activeSlot', offsetMs: 10, durationMs: 100 }
+    ]
+    const schedule = computeSchedule(project.modules, CONFIG)
+    const rows = flattenTree(schedule)
+    const blob = await buildGanttWorkbook({ project, schedule, rows, layout: project.excelLayout })
+    const result = await importGanttWorkbook(new File([await blob.arrayBuffer()], 'tree.xlsx'))
+    expect(result.success).toBe(true)
+    const plate = result.resources!.find(r => r.id === 'PLATE')!
+    expect(plate.motion).toEqual({ type: 'rotary', slots: 4, stepPerCycle: 1, startSlot: 0, stationOffset: 0 })
+    expect(result.resources!.find(r => r.id === 'H1')!.parentId).toBe('PLATE')
+    expect(result.resources!.find(r => r.id === 'H1')!.slotIndex).toBe(1)
+    expect(result.allocations!.find(a => a.id === 'slotClaim')!.slotMode).toBe('activeSlot')
+    expect(result.modules!.find(m => m.id === 'K')!.resourceId).toBe('PLATE')
+  })
+
   it('caps the time-bucket matrix to a printable number of columns', () => {
     const layout = { ...DEFAULT_EXCEL_LAYOUT }
     const step = matrixStep(600_000, CONFIG, layout)

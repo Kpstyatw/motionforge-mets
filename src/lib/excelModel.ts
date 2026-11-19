@@ -12,7 +12,7 @@ import { MODULE_COLORS } from '@/stores/useProjectStore'
 export const MATRIX_MAX_COLUMNS = 180
 
 export const COLUMN_KEYS = [
-  'code', 'level', 'kind', 'module', 'mechanism', 'action', 'stage',
+  'code', 'level', 'kind', 'module', 'mechanism', 'action', 'stage', 'resourceId',
   'startMs', 'anchorMs', 'durationMs', 'endMs', 'startMode', 'predecessors',
   'parentCode', 'path', 'color', 'id'
 ] as const
@@ -27,6 +27,7 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
   mechanism: '机构',
   action: '动作/子动作',
   stage: '阶段',
+  resourceId: '映射资源ID',
   startMs: '开始 (ms)',
   anchorMs: '锚定起始 (ms)',
   durationMs: '持续 (ms)',
@@ -52,6 +53,7 @@ export interface ExcelTableRow {
   mechanism: string
   action: string
   stage: string
+  resourceId: string
   startMs: number
   anchorMs: number
   durationMs: number
@@ -76,6 +78,7 @@ export function buildExcelRows(schedule: ScheduleResult, rows: TreeRow[]): Excel
       mechanism: kind === 'mechanism' ? task.module.moduleName : (path[1] ?? ''),
       action: task.isSummary ? task.module.moduleName : task.module.actionDescription,
       stage: task.module.stage ?? '',
+      resourceId: task.module.resourceId ?? '',
       startMs: task.startMs,
       anchorMs: task.module.anchorMs ?? task.startMs,
       durationMs: task.durationMs,

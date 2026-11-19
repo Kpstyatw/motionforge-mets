@@ -67,6 +67,10 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
   }
 
   const persist = () => setExcelLayout(layout)
+  const closeAndSave = () => {
+    persist()
+    onClose()
+  }
 
   /** Chart/table consistency: every row's arithmetic and every dependency constraint. */
   const verify = (): { issues: string[]; count: number } => {
@@ -138,7 +142,12 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
         allocations: result.allocations?.length ? result.allocations : (project?.allocations ?? []),
         timeConfig: result.timeConfig,
         cycleConfig: result.cycleConfig,
-        excelLayout: result.excelLayout
+        excelLayout: result.excelLayout,
+        ganttConfig: result.ganttConfig ?? project?.ganttConfig,
+        canvasConfig: result.canvasConfig ?? project?.canvasConfig,
+        createdAt: result.createdAt ?? project?.createdAt,
+        updatedAt: result.updatedAt ?? project?.updatedAt,
+        version: result.version ?? project?.version
       })
       setSourceFile({ name: file.name, kind: /\.csv$/i.test(file.name) ? 'csv' : 'xlsx' })
       setLayout({ ...result.excelLayout!, columnWidths: { ...result.excelLayout!.columnWidths } })
@@ -168,7 +177,7 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
           <h2 className="text-base font-semibold flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />{t('excel.title', { defaultValue: '甘特图 ⇄ Excel 转换' })}
           </h2>
-          <button onClick={onClose} className="text-xl text-muted-foreground hover:text-foreground">×</button>
+          <button onClick={closeAndSave} className="text-xl text-muted-foreground hover:text-foreground" title={t('excel.closeSave', { defaultValue: '保存设置并关闭' })}>×</button>
         </div>
 
         <div className="p-5 space-y-4">
@@ -241,7 +250,7 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
             </button>
             <button onClick={() => fileRef.current?.click()} disabled={busy}
               className="px-3 py-1.5 text-sm border rounded hover:bg-accent disabled:opacity-50 flex items-center gap-1">
-              <Upload className="h-3.5 w-3.5" />{t('excel.import', { defaultValue: '导入 Excel（回写甘特图）' })}
+              <Upload className="h-3.5 w-3.5" />{t('excel.importWithLayout', { defaultValue: '导入 Excel（含布局回写）' })}
             </button>
             <input ref={fileRef} type="file" accept=".xlsx" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) void handleImport(f) }} />
@@ -256,8 +265,8 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
         </div>
 
         <div className="flex justify-end px-5 py-3 border-t">
-          <button onClick={() => { persist(); onClose() }} className="px-4 py-1.5 text-sm border rounded hover:bg-accent">
-            {t('dialog.close', { defaultValue: '关闭' })}
+          <button onClick={closeAndSave} className="px-4 py-1.5 text-sm border rounded hover:bg-accent">
+            {t('excel.closeSave', { defaultValue: '保存设置并关闭' })}
           </button>
         </div>
       </div>

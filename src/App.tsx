@@ -10,7 +10,7 @@ import { useHistoryStore } from '@/stores/useHistoryStore'
 import { GridCanvas } from '@/components/Canvas/GridCanvas'
 import { ParameterTable } from '@/components/ParameterTable'
 import { FaPlay, FaPause, FaStop, FaRedo, FaCog, FaDownload, FaSave } from 'react-icons/fa'
-import { ZoomIn, ZoomOut, Maximize, LocateFixed, FileUp, Loader2, Clock3, Table2, LayoutGrid, GanttChartSquare } from 'lucide-react'
+import { ZoomIn, ZoomOut, Maximize, LocateFixed, FileUp, FolderOpen, Loader2, Clock3, Table2, LayoutGrid, GanttChartSquare } from 'lucide-react'
 import { useUIStore, MAX_ZOOM, MIN_ZOOM } from '@/stores/useUIStore'
 import { computeContentSize } from '@/lib/canvasRenderer'
 import { PreferencesDialog } from '@/components/PreferencesDialog'
@@ -46,7 +46,7 @@ import {
 
 function App() {
   const { t } = useTranslation()
-  const { handleImport, importCSVText, isImporting } = useCSVImport()
+  const { handleOpen, handleImport, importCSVText, isImporting } = useCSVImport()
   const { save: saveProject, saveAs: saveProjectAs } = useSaveProject()
   // Online edition: opened from a share link (shows the footer prompt).
   const [sharedMode, setSharedMode] = useState(false)
@@ -229,6 +229,7 @@ function App() {
   // table serves both the native menu (over IPC) and the key handler, so the
   // menu, the keys and the help dialog cannot disagree.
   const commands: Record<string, () => void> = {
+    'open-project': () => { if (!isImporting) handleOpen() },
     'import-csv': () => { if (!isImporting) handleImport() },
     save: () => saveProject(),
     'save-as': () => saveProjectAs(),
@@ -350,6 +351,15 @@ function App() {
               <div className="flex items-center gap-4">
                 <TooltipButton
                   className="p-2 text-sm border rounded hover:bg-accent disabled:opacity-50 transition-colors"
+                  onClick={() => handleOpen()}
+                  disabled={isImporting}
+                  tooltip={t('toolbar.openProject', { defaultValue: '打开 JSON 项目 (Ctrl+O)' })}
+                  aria-label={t('toolbar.openProject', { defaultValue: '打开 JSON 项目' })}
+                >
+                  <FolderOpen className="h-3.5 w-3.5" />
+                </TooltipButton>
+                <TooltipButton
+                  className="p-2 text-sm border rounded hover:bg-accent disabled:opacity-50 transition-colors"
                   onClick={handleImport}
                   disabled={isImporting}
                   tooltip={t('toolbar.importFile', { defaultValue: '导入 CSV / Excel (Ctrl+I)' })}
@@ -406,13 +416,15 @@ function App() {
                   >
                     <LayoutGrid className="h-3.5 w-3.5" />
                   </button>
-                  <button
-                    onClick={() => setTimeScaleOpen(true)}
-                    className="p-2 text-sm border rounded hover:bg-accent transition-colors"
-                    title={t('timeScale.title', { defaultValue: '时间刻度与精度' })}
-                  >
-                    <Clock3 className="h-3.5 w-3.5" />
-                  </button>
+                  {chartView === 'grid' && (
+                    <button
+                      onClick={() => setTimeScaleOpen(true)}
+                      className="p-2 text-sm border rounded hover:bg-accent transition-colors"
+                      title={t('timeScale.title', { defaultValue: '时间刻度与精度' })}
+                    >
+                      <Clock3 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <button
                     onClick={() => setExcelOpen(true)}
                     className="p-2 text-sm border rounded hover:bg-accent transition-colors"
@@ -480,43 +492,45 @@ function App() {
                   </select>
                 </div>
 
-                {/* View Controls */}
-                <div className="flex items-center gap-2 border-l pl-4">
-                  <TooltipButton
-                    className="p-2 text-sm border rounded hover:bg-accent disabled:opacity-50 transition-colors"
-                    onClick={zoomOut}
-                    disabled={zoom <= MIN_ZOOM}
-                    tooltip={t('shortcuts.zoomOut')}
-                  >
-                    <ZoomOut className="h-3.5 w-3.5" />
-                  </TooltipButton>
-                  <span className="w-11 text-center text-xs tabular-nums text-muted-foreground select-none">
-                    {Math.round(zoom * 100)}%
-                  </span>
-                  <TooltipButton
-                    className="p-2 text-sm border rounded hover:bg-accent disabled:opacity-50 transition-colors"
-                    onClick={zoomIn}
-                    disabled={zoom >= MAX_ZOOM}
-                    tooltip={t('shortcuts.zoomIn')}
-                  >
-                    <ZoomIn className="h-3.5 w-3.5" />
-                  </TooltipButton>
-                  <TooltipButton
-                    className="p-2 text-sm border rounded hover:bg-accent transition-colors"
-                    onClick={fitToWindow}
-                    tooltip={t('shortcuts.fitWindow')}
-                  >
-                    <Maximize className="h-3.5 w-3.5" />
-                  </TooltipButton>
-                  <TooltipButton
-                    className="px-2 py-1.5 text-xs font-medium border rounded hover:bg-accent disabled:opacity-50 transition-colors tabular-nums"
-                    onClick={resetZoom}
-                    disabled={zoom === 1}
-                    tooltip={t('shortcuts.actualSize')}
-                  >
-                    1:1
-                  </TooltipButton>
-                </div>
+                {/* View Controls — canvas zoom belongs to the grid view; the Gantt has its own. */}
+                {chartView === 'grid' && (
+                  <div className="flex items-center gap-2 border-l pl-4">
+                    <TooltipButton
+                      className="p-2 text-sm border rounded hover:bg-accent disabled:opacity-50 transition-colors"
+                      onClick={zoomOut}
+                      disabled={zoom <= MIN_ZOOM}
+                      tooltip={t('shortcuts.zoomOut')}
+                    >
+                      <ZoomOut className="h-3.5 w-3.5" />
+                    </TooltipButton>
+                    <span className="w-11 text-center text-xs tabular-nums text-muted-foreground select-none">
+                      {Math.round(zoom * 100)}%
+                    </span>
+                    <TooltipButton
+                      className="p-2 text-sm border rounded hover:bg-accent disabled:opacity-50 transition-colors"
+                      onClick={zoomIn}
+                      disabled={zoom >= MAX_ZOOM}
+                      tooltip={t('shortcuts.zoomIn')}
+                    >
+                      <ZoomIn className="h-3.5 w-3.5" />
+                    </TooltipButton>
+                    <TooltipButton
+                      className="p-2 text-sm border rounded hover:bg-accent transition-colors"
+                      onClick={fitToWindow}
+                      tooltip={t('shortcuts.fitWindow')}
+                    >
+                      <Maximize className="h-3.5 w-3.5" />
+                    </TooltipButton>
+                    <TooltipButton
+                      className="px-2 py-1.5 text-xs font-medium border rounded hover:bg-accent disabled:opacity-50 transition-colors tabular-nums"
+                      onClick={resetZoom}
+                      disabled={zoom === 1}
+                      tooltip={t('shortcuts.actualSize')}
+                    >
+                      1:1
+                    </TooltipButton>
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 {IS_ONLINE ? (
@@ -546,7 +560,6 @@ function App() {
               <GanttView
                 onEditTask={openEditor}
                 onOpenTimeScale={() => setTimeScaleOpen(true)}
-                onOpenExcel={() => setExcelOpen(true)}
                 onAddChild={openAddChild}
                 onManageResources={() => setResourceManagerOpen(true)}
               />
@@ -652,7 +665,7 @@ function App() {
         isOpen={speedSettingsOpen} 
         onClose={() => setSpeedSettingsOpen(false)} 
       />
-      <ShortcutsHelp />
+      <ShortcutsHelp onOpen={() => setHelpOpen(true)} />
     </div>
   )
 }

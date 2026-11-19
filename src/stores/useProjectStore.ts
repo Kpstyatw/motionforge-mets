@@ -3,8 +3,8 @@ import { immer } from 'zustand/middleware/immer'
 import { v4 as uuidv4 } from 'uuid'
 import {
   CanvasConfig, CycleConfig, Dependency, DependencyType, ExcelLayoutConfig,
-  GanttConfig, ModuleData, ProjectData, Resource, ResourceAllocation,
-  StartMode, TaskKind, TimeConfig
+  GanttConfig, ModuleData, ProjectData, ProjectFileFormat, Resource, ResourceAllocation,
+  RotaryMotion, StartMode, TaskKind, TimeConfig
 } from '@/types'
 import { useHistoryStore } from './useHistoryStore'
 import {
@@ -26,7 +26,7 @@ import { DEFAULT_CYCLE_CONFIG, expandCycles, normalizeCycleConfig } from '@/lib/
  * "change a predecessor -> every successor moves" work everywhere at once.
  */
 
-const defaultCanvasConfig: CanvasConfig = {
+export const DEFAULT_CANVAS_CONFIG: CanvasConfig = {
   cellWidth: 20,
   cellHeight: 30,
   showGrid: true,
@@ -48,7 +48,7 @@ function freshProject(): ProjectData {
     modules: [],
     resources: [],
     allocations: [],
-    canvasConfig: { ...defaultCanvasConfig },
+    canvasConfig: { ...DEFAULT_CANVAS_CONFIG },
     createdAt: now,
     updatedAt: now,
     version: '2.0.0',
@@ -57,6 +57,19 @@ function freshProject(): ProjectData {
     cycleConfig: { ...DEFAULT_CYCLE_CONFIG },
     excelLayout: { ...DEFAULT_EXCEL_LAYOUT, columnWidths: { ...DEFAULT_EXCEL_LAYOUT.columnWidths } },
     ganttConfig: { ...DEFAULT_GANTT_CONFIG }
+  }
+}
+
+/** Normalise rotary kinematics: clamp slots, snap step/start, tolerate legacy data. */
+export function normalizeRotaryMotion(input: Partial<RotaryMotion> | null | undefined): RotaryMotion | undefined {
+  if (!input || input.type !== 'rotary') return undefined
+  const slots = Math.min(360, Math.max(1, Math.round(Number(input.slots) || 1)))
+  return {
+    type: 'rotary',
+    slots,
+    stepPerCycle: Math.round(Number(input.stepPerCycle) || 0),
+    startSlot: Math.max(0, Math.round(Number(input.startSlot) || 0)),
+    stationOffset: Math.round(Number(input.stationOffset) || 0)
   }
 }
 
@@ -86,7 +99,10 @@ export function migrateProject(input: Partial<ProjectData> & { modules?: ModuleD
       name: r.name || '资源',
       type: r.type,
       color: r.color,
-      notes: r.notes
+      notes: r.notes,
+      parentId: r.parentId,
+      slotIndex: r.slotIndex === undefined ? undefined : Math.max(0, Math.round(r.slotIndex)),
+      motion: r.motion ? normalizeRotaryMotion(r.motion) : undefined
     })),
     allocations: (input.allocations ?? []).map(a => ({
       id: a.id || uuidv4(),
@@ -94,6 +110,8 @@ export function migrateProject(input: Partial<ProjectData> & { modules?: ModuleD
       resourceId: a.resourceId,
       offsetMs: Math.max(0, Math.round(a.offsetMs || 0)),
       durationMs: Math.max(0, Math.round(a.durationMs || 0)),
+      slotMode: (a.slotMode === 'activeSlot' ? 'activeSlot' : a.slotMode) as ResourceAllocation['slotMode'],
+      source: a.source,
       notes: a.notes
     })).filter(a => a.taskId && a.resourceId),
     modules: syncLegacyFields(modules, computeSchedule(modules, timeConfig), timeConfig)
@@ -119,7 +137,7 @@ export interface SourceFile {
   path?: string
   /** Display name, e.g. "plan.xlsx". */
   name: string
-  kind: 'xlsx' | 'csv'
+  kind: ProjectFileFormat
 }
 
 interface ProjectState {
@@ -162,6 +180,12 @@ interface ProjectState {
   addResource: (resource?: Partial<Resource>) => string
   updateResource: (id: string, patch: Partial<Resource>) => void
   removeResource: (id: string) => void
+  /** Map a physical mechanism node to an abstract resource ('' clears it). */
+  linkMechanismResource: (moduleId: string, resourceId: string | null) => void
+  /** Set rotary kinematics on a parent resource; null removes them. */
+  setResourceMotion: (resourceId: string, motion: Partial<RotaryMotion> | null) => void
+  /** Add a child slot resource under a parent (e.g. a wash-plate hole). */
+  addChildResource: (parentId: string, name?: string, slotIndex?: number) => string | null
   addAllocation: (allocation: Omit<ResourceAllocation, 'id'>) => string | null
   updateAllocation: (id: string, patch: Partial<ResourceAllocation>) => void
   removeAllocation: (id: string) => void
@@ -561,7 +585,10 @@ export const useProjectStore = create<ProjectState>()(
           name: resource?.name ?? '新资源',
           type: resource?.type,
           color: resource?.color,
-          notes: resource?.notes
+          notes: resource?.notes,
+          parentId: resource?.parentId,
+          slotIndex: resource?.slotIndex,
+          motion: resource?.motion ? normalizeRotaryMotion(resource.motion) : undefined
         })
         state.project.updatedAt = new Date().toISOString()
         state.unsavedChanges = true
@@ -580,11 +607,64 @@ export const useProjectStore = create<ProjectState>()(
 
     removeResource: id => set(state => {
       if (!state.project) return
-      state.project.resources = state.project.resources.filter(r => r.id !== id)
-      state.project.allocations = state.project.allocations.filter(a => a.resourceId !== id)
+      const childIds = new Set(state.project.resources.filter(r => r.parentId === id).map(r => r.id))
+      state.project.resources = state.project.resources.filter(r => r.id !== id && !childIds.has(r.id))
+      state.project.allocations = state.project.allocations.filter(
+        a => a.resourceId !== id && !childIds.has(a.resourceId)
+      )
+      // Unmap any mechanism that pointed at the removed resource (or its slots).
+      state.project.modules.forEach(m => {
+        if (m.resourceId && (m.resourceId === id || childIds.has(m.resourceId))) m.resourceId = undefined
+      })
       state.project.updatedAt = new Date().toISOString()
       state.unsavedChanges = true
     }),
+
+    linkMechanismResource: (moduleId, resourceId) => set(state => {
+      if (!state.project) return
+      const node = state.project.modules.find(m => m.id === moduleId)
+      if (!node || node.kind !== 'mechanism') return
+      node.resourceId = resourceId ?? undefined
+      state.project.updatedAt = new Date().toISOString()
+      state.unsavedChanges = true
+    }),
+
+    setResourceMotion: (resourceId, motion) => set(state => {
+      if (!state.project) return
+      const r = state.project.resources.find(x => x.id === resourceId)
+      if (!r) return
+      r.motion = motion ? normalizeRotaryMotion(motion) : undefined
+      state.project.updatedAt = new Date().toISOString()
+      state.unsavedChanges = true
+    }),
+
+    addChildResource: (parentId, name, slotIndex) => {
+      const project = get().project
+      if (!project) return null
+      const parent = project.resources.find(r => r.id === parentId)
+      if (!parent) return null
+      const id = uuidv4()
+      const used = new Set(project.resources.filter(r => r.parentId === parentId).map(r => r.slotIndex))
+      let index = slotIndex
+      if (index === undefined) {
+        index = 0
+        while (used.has(index)) index++
+      }
+      set(state => {
+        if (!state.project) return
+        state.project.resources.push({
+          id,
+          name: name ?? `${parent.name} · 槽${index + 1}`,
+          type: parent.type ? `${parent.type}-slot` : 'slot',
+          color: parent.color,
+          parentId,
+          slotIndex: index
+        })
+        state.project.updatedAt = new Date().toISOString()
+        state.unsavedChanges = true
+      })
+      return id
+    },
 
     addAllocation: allocation => {
       const project = get().project

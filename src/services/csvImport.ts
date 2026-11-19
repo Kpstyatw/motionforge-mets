@@ -1,9 +1,10 @@
 import Papa from 'papaparse'
-import { ModuleData, TaskKind, TimeConfig } from '@/types'
+import { ModuleData, ProjectData, TaskKind, TimeConfig } from '@/types'
 import { v4 as uuidv4 } from 'uuid'
 import { MODULE_COLORS } from '@/stores/useProjectStore'
 import { DEFAULT_TIME_CONFIG, quantize } from '@/lib/timeScale'
 import { parsePredecessors } from '@/lib/dependencyEngine'
+import { parseProjectJson, PROJECT_META_COLUMN } from '@/services/jsonProject'
 
 /**
  * CSV import, extended for the Gantt edition.
@@ -40,12 +41,15 @@ export interface CSVRow {
   color?: string
   scaleMs?: string | number
   precisionMs?: string | number
+  [PROJECT_META_COLUMN]?: string
 }
 
 export interface CSVImportResult {
   success: boolean
   data?: ModuleData[]
   timeConfig?: Partial<TimeConfig>
+  /** Full project snapshot embedded by Save/Save As as a JSON column. */
+  projectMeta?: ProjectData
   error?: string
   rowErrors?: Array<{ row: number; message: string }>
 }
@@ -57,9 +61,9 @@ const num = (value: unknown, fallback = 0): number => {
 
 const VALID_KINDS: TaskKind[] = ['module', 'mechanism', 'action', 'subaction']
 
-export async function importCSVFile(file: File): Promise<CSVImportResult> {
-  return new Promise(resolve => {
-    Papa.parse(file, {
+export function parseProjectCSVText(csv: string): Promise<CSVImportResult> {
+  return new Promise<CSVImportResult>(resolve => {
+    Papa.parse(csv, {
       header: true,
       skipEmptyLines: true,
       complete: results => {
@@ -74,9 +78,13 @@ export async function importCSVFile(file: File): Promise<CSVImportResult> {
         }
         resolve(validateAndTransformData(data as CSVRow[]))
       },
-      error: error => resolve({ success: false, error: `Failed to parse CSV: ${error.message}` })
+      error: (error: Error) => resolve({ success: false, error: `Failed to parse CSV: ${error.message}` })
     })
   })
+}
+
+export async function importCSVFile(file: File): Promise<CSVImportResult> {
+  return parseProjectCSVText(await file.text())
 }
 
 function makeNode(partial: Partial<ModuleData> & { id: string; code: string; kind: TaskKind }): ModuleData {
@@ -114,9 +122,26 @@ function validateAndTransformData(rows: CSVRow[]): CSVImportResult {
     }
   }
 
-  const scaleMs = Math.max(1, Math.round(num(firstRow.scaleMs, DEFAULT_TIME_CONFIG.scaleMs)))
-  const precisionMs = Math.max(1, Math.min(scaleMs, Math.round(num(firstRow.precisionMs, DEFAULT_TIME_CONFIG.precisionMs))))
-  const timeConfig: Partial<TimeConfig> = { scaleMs, precisionMs, displayUnit: 'ms' }
+  const metaText = firstRow[PROJECT_META_COLUMN]
+  const metaResult = typeof metaText === 'string' && metaText.trim()
+    ? parseProjectJson(metaText)
+    : undefined
+  const projectMeta = metaResult?.success ? metaResult.project : undefined
+
+  const scaleMs = Math.max(1, Math.round(num(
+    firstRow.scaleMs,
+    projectMeta?.timeConfig?.scaleMs ?? DEFAULT_TIME_CONFIG.scaleMs
+  )))
+  const precisionMs = Math.max(1, Math.min(scaleMs, Math.round(num(
+    firstRow.precisionMs,
+    projectMeta?.timeConfig?.precisionMs ?? DEFAULT_TIME_CONFIG.precisionMs
+  ))))
+  const timeConfig: Partial<TimeConfig> = {
+    ...(projectMeta?.timeConfig ?? {}),
+    scaleMs,
+    precisionMs,
+    displayUnit: projectMeta?.timeConfig?.displayUnit ?? 'ms'
+  }
   const hasExplicitHierarchy = 'kind' in firstRow
 
   const moduleColorMap: Record<string, string> = {}
@@ -265,7 +290,7 @@ function validateAndTransformData(rows: CSVRow[]): CSVImportResult {
     }
   })
 
-  return { success: true, data: modules, timeConfig }
+  return { success: true, data: modules, timeConfig, projectMeta }
 }
 
 export function defaultTimeConfigFromCsv(result: CSVImportResult): Partial<TimeConfig> {

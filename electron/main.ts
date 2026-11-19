@@ -163,9 +163,31 @@ app.on('window-all-closed', () => {
 })
 
 // IPC handlers for file operations
-ipcMain.handle('dialog:openFile', async () => {
+// The renderer asks for either a complete project file (JSON) or tabular data
+// (CSV / Excel). Keep a no-argument default for older callers.
+const OPEN_FILE_FILTERS: Record<'project' | 'data' | 'all', Electron.FileFilter[]> = {
+  project: [
+    { name: 'JSON 项目文件', extensions: ['json'] },
+    { name: 'All Files', extensions: ['*'] }
+  ],
+  data: [
+    { name: 'CSV / Excel', extensions: ['csv', 'xlsx', 'xlsm'] },
+    { name: 'CSV Files', extensions: ['csv'] },
+    { name: 'Excel Files', extensions: ['xlsx', 'xlsm'] },
+    { name: 'All Files', extensions: ['*'] }
+  ],
+  all: [
+    { name: 'CSV / Excel / JSON', extensions: ['csv', 'xlsx', 'xlsm', 'json'] },
+    { name: 'JSON Project Files', extensions: ['json'] },
+    { name: 'CSV Files', extensions: ['csv'] },
+    { name: 'Excel Files', extensions: ['xlsx', 'xlsm'] },
+    { name: 'All Files', extensions: ['*'] }
+  ]
+}
+
+ipcMain.handle('dialog:openFile', async (_event, kind?: 'project' | 'data') => {
   if (!mainWindow) return { canceled: true, filePaths: [] }
-  
+
   try {
     // Ensure window is focused before showing dialog
     if (mainWindow.isMinimized()) {
@@ -174,15 +196,10 @@ ipcMain.handle('dialog:openFile', async () => {
     if (!mainWindow.isFocused()) {
       mainWindow.focus()
     }
-    
+
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
-      filters: [
-        { name: 'CSV / Excel', extensions: ['csv', 'xlsx', 'xlsm'] },
-        { name: 'CSV Files', extensions: ['csv'] },
-        { name: 'Excel Files', extensions: ['xlsx', 'xlsm'] },
-        { name: 'All Files', extensions: ['*'] }
-      ]
+      filters: OPEN_FILE_FILTERS[kind ?? 'all']
     })
     
     return result

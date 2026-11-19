@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { computeSchedule } from '@/lib/dependencyEngine'
 import { computeResourceSchedule } from '@/lib/resourceScheduler'
+import { deriveMechanismAllocations } from '@/lib/resourceTree'
 import { expandCycles } from '@/lib/cycleEngine'
 import { normalizeTimeConfig } from '@/lib/timeScale'
 
@@ -50,10 +51,13 @@ export function useCycleView() {
     [expansion.expanded, modules, config, schedule]
   )
 
-  const resourceSchedule = useMemo(
-    () => computeResourceSchedule(schedule, expandedAllocations, resources ?? []),
-    [schedule, expandedAllocations, resources]
-  )
+  // Mechanism-bound resources generate auto claims from their descendant
+  // actions. Derived in the view layer only — project.allocations stays the
+  // single authored truth, so nothing is duplicated or persisted twice.
+  const resourceSchedule = useMemo(() => {
+    const autoClaims = deriveMechanismAllocations(schedule)
+    return computeResourceSchedule(schedule, [...expandedAllocations, ...autoClaims], resources ?? [])
+  }, [schedule, expandedAllocations, resources])
 
   const totalMs = Math.max(schedule.totalMs, 1)
 

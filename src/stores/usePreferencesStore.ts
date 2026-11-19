@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
+import { ProjectFileFormat } from '@/types'
 import { Preferences, DEFAULT_PREFERENCES } from '@/types/preferences'
 
 interface PreferencesStore extends Preferences {
@@ -7,6 +8,7 @@ interface PreferencesStore extends Preferences {
   updateGridPreferences: (updates: Partial<Preferences['grid']>) => void
   updateAnimationPreferences: (updates: Partial<Preferences['animation']>) => void
   updateUIPreferences: (updates: Partial<Preferences['ui']>) => void
+  updateFilePreferences: (updates: Partial<Preferences['file']>) => void
   resetToDefaults: () => void
   loadPreferences: () => void
   savePreferences: () => void
@@ -20,18 +22,28 @@ const LEGACY_STORAGE_KEY = 'mets-preferences'
 const readStoredPreferences = (): string | null =>
   localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
 
+/** Merge older/localStorage preferences that predate the `file` section. */
+export function normalizePreferences(saved?: Partial<Preferences> | null): Preferences {
+  const format = saved?.file?.defaultFormat as ProjectFileFormat | undefined
+  const defaultFormat: ProjectFileFormat =
+    format === 'json' || format === 'xlsx' || format === 'csv' ? format : DEFAULT_PREFERENCES.file.defaultFormat
+  return {
+    grid: { ...DEFAULT_PREFERENCES.grid, ...(saved?.grid ?? {}) },
+    animation: { ...DEFAULT_PREFERENCES.animation, ...(saved?.animation ?? {}) },
+    ui: { ...DEFAULT_PREFERENCES.ui, ...(saved?.ui ?? {}) },
+    file: { ...DEFAULT_PREFERENCES.file, ...(saved?.file ?? {}), defaultFormat }
+  }
+}
+
 // Load initial preferences from localStorage
 const loadInitialPreferences = (): Preferences => {
   try {
     const saved = readStoredPreferences()
-    if (saved) {
-      const preferences = JSON.parse(saved) as Preferences
-      return { ...DEFAULT_PREFERENCES, ...preferences }
-    }
+    if (saved) return normalizePreferences(JSON.parse(saved) as Partial<Preferences>)
   } catch (error) {
     console.warn('Failed to load preferences from localStorage:', error)
   }
-  return DEFAULT_PREFERENCES
+  return normalizePreferences(DEFAULT_PREFERENCES)
 }
 
 export const usePreferencesStore = create<PreferencesStore>()(
@@ -73,12 +85,20 @@ export const usePreferencesStore = create<PreferencesStore>()(
       get().savePreferences()
     },
 
+    updateFilePreferences: (updates) => {
+      set((state) => {
+        Object.assign(state.file, updates)
+      })
+      get().savePreferences()
+    },
+
     resetToDefaults: () => {
       set((state) => {
       // Deep copy to ensure all nested properties are reset
       state.grid = { ...DEFAULT_PREFERENCES.grid }
       state.animation = { ...DEFAULT_PREFERENCES.animation }
       state.ui = { ...DEFAULT_PREFERENCES.ui }
+      state.file = { ...DEFAULT_PREFERENCES.file }
       })
       get().savePreferences()
     },
@@ -87,7 +107,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       try {
         const saved = readStoredPreferences()
         if (saved) {
-          const preferences = JSON.parse(saved) as Preferences
+          const preferences = normalizePreferences(JSON.parse(saved) as Partial<Preferences>)
           set((state) => {
             Object.assign(state, preferences)
           })
@@ -99,7 +119,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
 
     savePreferences: () => {
       try {
-        const { updateGridPreferences, updateAnimationPreferences, updateUIPreferences, resetToDefaults, loadPreferences, savePreferences, ...preferences } = get()
+        const { updateGridPreferences, updateAnimationPreferences, updateUIPreferences, updateFilePreferences, resetToDefaults, loadPreferences, savePreferences, ...preferences } = get()
         const preferencesToSave = JSON.stringify(preferences)
         localStorage.setItem(STORAGE_KEY, preferencesToSave)
       } catch (error) {

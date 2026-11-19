@@ -66,6 +66,12 @@ export interface ModuleData {
   /** Hierarchy parent. Sub-actions may be nested to any depth. */
   parentId?: string | null
   kind?: TaskKind
+  /**
+   * When this row is a mechanism summary, the global resource it represents.
+   * Its descendant actions then automatically claim that resource for their
+   * own execution windows — no manual ResourceAllocation required.
+   */
+  resourceId?: string
   /** Incoming dependency edges. Outgoing edges are derived by scanning all rows. */
   predecessors?: Dependency[]
 
@@ -92,6 +98,19 @@ export interface ModuleData {
  * by many actions in many flows. This is what removes the duplicate-editing
  * problem of a resource-centric tree.
  */
+/** Rotary kinematics for a parent resource whose child slots orbit a fixed station. */
+export interface RotaryMotion {
+  type: 'rotary'
+  /** Number of child slots around the disc (e.g. 8 holes on a wash plate). */
+  slots: number
+  /** Slot index advanced per cycle; negative reverses direction, 0 = no rotation. */
+  stepPerCycle: number
+  /** Slot index aligned to the station in cycle 1 (0-based). Default 0. */
+  startSlot?: number
+  /** Angular offset of an extra fixed station, in slot steps. Default 0. */
+  stationOffset?: number
+}
+
 export interface Resource {
   id: string
   name: string
@@ -99,6 +118,12 @@ export interface Resource {
   type?: string
   color?: string
   notes?: string
+  /** Parent resource id; children form a tree (wash plate → holes). */
+  parentId?: string
+  /** 0-based slot identity on a rotary parent; stable while the disc spins. */
+  slotIndex?: number
+  /** Present on a rotary parent; children inherit its phase. */
+  motion?: RotaryMotion
 }
 
 /**
@@ -120,6 +145,20 @@ export interface ResourceAllocation {
   offsetMs: number
   /** Length of the claim, integer ms, >= 0. */
   durationMs: number
+  /**
+   * fixed  — claim the resourceId itself (default, legacy behaviour).
+   * activeSlot — when resourceId is a rotary parent, resolve to the child slot
+   * selected by the phase function for the owning action's cycle, then claim
+   * that slot id. Falls back to the parent when no child matches.
+   */
+  slotMode?: 'fixed' | 'activeSlot'
+  /**
+   * Where the claim originates. Authored claims omit this (= 'manual');
+   * derived claims are synthesised in the view layer, never stored back:
+   *   mechanism — from a mechanism node's resourceId binding
+   *   material  — future phase: from material in/out state changes
+   */
+  source?: 'manual' | 'mechanism' | 'material'
   notes?: string
 }
 
@@ -199,6 +238,9 @@ export interface AnimationState {
   totalFrames: number
   loop: boolean
 }
+
+/** Full-project file formats supported by Save / Save As. */
+export type ProjectFileFormat = 'json' | 'xlsx' | 'csv'
 
 // Project data
 export interface ProjectData {

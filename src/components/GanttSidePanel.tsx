@@ -4,7 +4,7 @@ import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { computeSchedule, flattenTree } from '@/lib/dependencyEngine'
 import { describeDuration, formatTime, normalizeTimeConfig } from '@/lib/timeScale'
-import { Plus, Layers3, AlertTriangle, EyeOff } from 'lucide-react'
+import { Plus, Layers3, AlertTriangle } from 'lucide-react'
 
 /** Sidebar for the Gantt view: hierarchy actions, stats and diagnostics. */
 interface GanttSidePanelProps {
@@ -15,7 +15,7 @@ interface GanttSidePanelProps {
 export const GanttSidePanel: React.FC<GanttSidePanelProps> = ({ onAddChild, onEditTask }) => {
   const { t } = useTranslation()
   const { project, scheduleWarnings } = useProjectStore()
-  const { selectedTaskId, setSelectedTask, collapsedTaskIds, toggleCollapsed, expandAll } = useUIStore()
+  const { selectedTaskId, setSelectedTask, collapsedTaskIds, toggleCollapsed } = useUIStore()
   const config = normalizeTimeConfig(project?.timeConfig)
   const schedule = useMemo(
     () => computeSchedule(project?.modules ?? [], config),
@@ -59,14 +59,6 @@ export const GanttSidePanel: React.FC<GanttSidePanelProps> = ({ onAddChild, onEd
         </button>
         <button onClick={() => onAddChild(selectedTaskId)} className="px-2 py-1.5 text-xs border rounded hover:bg-accent flex items-center justify-center gap-1">
           <Plus className="h-3 w-3" />{t('gantt.addChild', { defaultValue: '新增下级' })}
-        </button>
-        <button onClick={expandAll} className="px-2 py-1.5 text-xs border rounded hover:bg-accent">
-          {t('gantt.expandAll', { defaultValue: '全部展开' })}
-        </button>
-        <button onClick={() => useUIStore.getState().setCollapsedTasks(
-          schedule.tasks.filter(x => x.childIds.length > 0).map(x => x.id)
-        )} className="px-2 py-1.5 text-xs border rounded hover:bg-accent flex items-center justify-center gap-1">
-          <EyeOff className="h-3 w-3" />{t('gantt.collapseAll', { defaultValue: '全部折叠' })}
         </button>
       </div>
 

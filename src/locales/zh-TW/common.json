@@ -6,7 +6,8 @@
   "menu": {
     "file": {
       "title": "檔案",
-      "import": "匯入CSV",
+      "open": "開啟 JSON 專案 (Ctrl+O)",
+      "import": "匯入 CSV / Excel (Ctrl+I)",
       "save": "儲存",
       "saveAs": "另存新檔",
       "export": {
@@ -74,6 +75,7 @@
   "toolbar": {
     "importCSV": "匯入CSV",
     "importSuccess": "已匯入 {{count}} 筆資料",
+    "openProject": "開啟 JSON 專案 (Ctrl+O)",
     "importFile": "匯入 CSV / Excel (Ctrl+I)"
   },
   "timeline": {
@@ -120,7 +122,9 @@
     "importFailed": "匯入失敗",
     "exportFailed": "匯出失敗",
     "unknown": "未知錯誤",
-    "unsupportedFile": "請選擇 .csv 或 .xlsx 檔案"
+    "unsupportedFile": "請選擇 .csv 或 .xlsx 檔案",
+    "unsupportedProjectFile": "「開啟」僅支援 .json 專案檔；CSV / Excel 請使用「匯入」。",
+    "unsupportedImportFile": "「匯入」僅支援 CSV / Excel；JSON 專案檔請使用「開啟」。"
   },
   "settings": {
     "title": "設定",
@@ -136,6 +140,14 @@
       "title": "網格設定",
       "cellWidth": "單元格寬度",
       "cellHeight": "單元格高度"
+    },
+    "file": {
+      "title": "預設檔案類型",
+      "defaultFormat": "儲存 / 另存新檔預設格式",
+      "json": "JSON 專案檔（建議）",
+      "excel": "Excel 活頁簿 (.xlsx)",
+      "csv": "CSV 專案檔（含中繼資料欄）",
+      "hint": "已關聯的檔案仍按原格式寫回；CSV 的 __project_json 中繼資料欄請勿刪除。"
     },
     "animation": {
       "title": "動畫設定",
@@ -422,6 +434,9 @@
     "includeHidden": "匯出被隱藏（已摺疊）的子動作列",
     "export": "匯出 Excel",
     "import": "匯入 Excel（回寫甘特圖）",
+    "importWithLayout": "匯入 Excel（含配置回寫）",
+    "openWorkbench": "開啟 Excel 工作台",
+    "closeSave": "儲存設定並關閉",
     "verify": "校驗一致性",
     "verified": "已校驗 {{count}} 列；圖表與表格資料一致，無衝突。",
     "issues": "處不一致",
@@ -466,7 +481,21 @@
     "noResource": "（無資源，請先新建）",
     "needResource": "請先新增一個資源",
     "invalidNumber": "偏移與時長必須是數字",
-    "zeroDuration": "佔用時長必須大於 0（且在動作時長內）"
+    "zeroDuration": "佔用時長必須大於 0（且在動作時長內）",
+    "slotIndex": "槽位索引",
+    "addSlot": "新增子槽位",
+    "rotary": "旋轉盤",
+    "slots": "槽位數",
+    "step": "每週期步進",
+    "startSlotLabel": "起始槽",
+    "rotaryLane": "旋轉盤：每週期選中一個子槽位",
+    "mapResource": "映射資源（物理模組 → 抽象資源）",
+    "noMapping": "（不映射 · 不自動佔用）",
+    "mapHint": "映射後，本機構下所有動作的執行視窗會自動佔用該資源（僅衍生，不寫入佔用表）。",
+    "targetMode": "佔用目標",
+    "fixedSlot": "該資源本身",
+    "activeSlot": "當前選中槽位",
+    "activeSlotHint": "按動作所屬週期解析到當前選中槽位"
   },
   "cycle": {
     "title": "固定週期設定",
@@ -488,5 +517,9 @@
     "ok": "已儲存",
     "failed": "儲存失敗",
     "empty": "暫無資料可儲存"
+  },
+  "json": {
+    "importOk": "JSON 專案已匯入",
+    "importFailed": "JSON 匯入失敗"
   }
 }

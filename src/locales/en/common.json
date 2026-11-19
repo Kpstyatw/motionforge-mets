@@ -6,7 +6,8 @@
   "menu": {
     "file": {
       "title": "File",
-      "import": "Import CSV",
+      "open": "Open JSON Project (Ctrl+O)",
+      "import": "Import CSV / Excel (Ctrl+I)",
       "save": "Save",
       "saveAs": "Save As",
       "export": {
@@ -74,6 +75,7 @@
   "toolbar": {
     "importCSV": "Import CSV",
     "importSuccess": "Imported {{count}} rows",
+    "openProject": "Open JSON Project (Ctrl+O)",
     "importFile": "Import CSV / Excel (Ctrl+I)"
   },
   "timeline": {
@@ -120,7 +122,9 @@
     "importFailed": "Import failed",
     "exportFailed": "Export failed",
     "unknown": "Unknown error",
-    "unsupportedFile": "Please choose a .csv or .xlsx file"
+    "unsupportedFile": "Please choose a .csv or .xlsx file",
+    "unsupportedProjectFile": "Open only accepts .json project files; use Import for CSV / Excel.",
+    "unsupportedImportFile": "Import only accepts CSV / Excel; use Open for .json project files."
   },
   "settings": {
     "title": "Settings",
@@ -136,6 +140,14 @@
       "title": "Grid Settings",
       "cellWidth": "Cell Width",
       "cellHeight": "Cell Height"
+    },
+    "file": {
+      "title": "Default File Type",
+      "defaultFormat": "Default format for Save / Save As",
+      "json": "JSON project file (recommended)",
+      "excel": "Excel workbook (.xlsx)",
+      "csv": "CSV project file (with metadata column)",
+      "hint": "An associated file keeps its own format on Ctrl+S. Do not delete the __project_json metadata column in CSV."
     },
     "animation": {
       "title": "Animation Settings",
@@ -422,6 +434,9 @@
     "includeHidden": "Export rows hidden by collapse",
     "export": "Export Excel",
     "import": "Import Excel (write back to Gantt)",
+    "importWithLayout": "Import Excel (with layout write-back)",
+    "openWorkbench": "Open Excel workbench",
+    "closeSave": "Save settings and close",
     "verify": "Verify consistency",
     "verified": "Verified {{count}} rows; chart and table data are consistent, no conflicts.",
     "issues": "inconsistencies",
@@ -466,7 +481,21 @@
     "noResource": "（no resources — create one first）",
     "needResource": "Add a resource first",
     "invalidNumber": "Offset and duration must be numbers",
-    "zeroDuration": "Duration must be > 0 (and within the action)"
+    "zeroDuration": "Duration must be > 0 (and within the action)",
+    "slotIndex": "Slot index",
+    "addSlot": "Add child slot",
+    "rotary": "Rotary disc",
+    "slots": "Slots",
+    "step": "Step / cycle",
+    "startSlotLabel": "Start slot",
+    "rotaryLane": "Rotary disc: one child slot selected per cycle",
+    "mapResource": "Map resource (physical module → abstract resource)",
+    "noMapping": "(no mapping · no auto claim)",
+    "mapHint": "Once mapped, every action under this mechanism claims the resource during its own window (derived only, never written to the claim table).",
+    "targetMode": "Claim target",
+    "fixedSlot": "The resource itself",
+    "activeSlot": "Current selected slot",
+    "activeSlotHint": "Resolved to the selected slot for the action's cycle"
   },
   "cycle": {
     "title": "Fixed cycle settings",
@@ -488,5 +517,9 @@
     "ok": "Saved",
     "failed": "Save failed",
     "empty": "Nothing to save yet"
+  },
+  "json": {
+    "importOk": "JSON project imported",
+    "importFailed": "JSON import failed"
   }
 }

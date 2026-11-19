@@ -1,18 +1,18 @@
 import ExcelJS from 'exceljs'
 import {
-  CycleConfig, ExcelLayoutConfig, ModuleData, ProjectData, Resource, ResourceAllocation,
-  TaskKind, TimeConfig
+  CanvasConfig, CycleConfig, ExcelLayoutConfig, GanttConfig, ModuleData, ProjectData,
+  Resource, ResourceAllocation, TaskKind, TimeConfig
 } from '@/types'
 import { ScheduleResult, TreeRow, parsePredecessors } from '@/lib/dependencyEngine'
 import {
   buildExcelRows, COLUMN_KEYS, COLUMN_LABELS, ColumnKey,
   KIND_LABELS, MATRIX_MAX_COLUMNS, matrixStep
 } from '@/lib/excelModel'
-import { DEFAULT_EXCEL_LAYOUT, DEFAULT_TIME_CONFIG, formatTime, normalizeTimeConfig } from '@/lib/timeScale'
+import { DEFAULT_EXCEL_LAYOUT, DEFAULT_GANTT_CONFIG, DEFAULT_TIME_CONFIG, formatTime, normalizeTimeConfig } from '@/lib/timeScale'
 import {
   collapseCycleProjection, cycleIndexOf, normalizeCycleConfig, templateIdOf
 } from '@/lib/cycleEngine'
-import { MODULE_COLORS } from '@/stores/useProjectStore'
+import { DEFAULT_CANVAS_CONFIG, MODULE_COLORS } from '@/stores/useProjectStore'
 import { v4 as uuidv4 } from 'uuid'
 
 // Re-exported so callers/tests can keep importing the Excel API from one place.
@@ -58,7 +58,12 @@ export interface ExcelImportResult {
   timeConfig?: TimeConfig
   cycleConfig?: CycleConfig
   excelLayout?: ExcelLayoutConfig
+  ganttConfig?: GanttConfig
+  canvasConfig?: CanvasConfig
   projectName?: string
+  version?: string
+  createdAt?: string
+  updatedAt?: string
   error?: string
   warnings?: string[]
 }
@@ -277,6 +282,11 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
     ['matrixLabelEvery', mergeEvery],
     ['fontSize', layout.fontSize],
     ['columnWidths', JSON.stringify(layout.columnWidths)],
+    ['ganttConfig', JSON.stringify(project.ganttConfig ?? DEFAULT_GANTT_CONFIG)],
+    ['canvasConfig', JSON.stringify(project.canvasConfig ?? DEFAULT_CANVAS_CONFIG)],
+    ['version', project.version],
+    ['createdAt', project.createdAt],
+    ['updatedAt', project.updatedAt],
     ['totalMs', schedule.totalMs],
     ['exportedAt', (input.now ?? new Date()).toISOString()]
   ]
@@ -301,14 +311,30 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
     { header: '名称', key: 'name', width: 20 },
     { header: '类型', key: 'type', width: 16 },
     { header: '颜色', key: 'color', width: 14 },
+    { header: '上级资源ID', key: 'parentId', width: 24 },
+    { header: '槽位索引', key: 'slotIndex', width: 12 },
+    { header: '旋转槽位数', key: 'slots', width: 14 },
+    { header: '每周期步进', key: 'step', width: 14 },
+    { header: '起始槽', key: 'startSlot', width: 12 },
+    { header: '工位偏移', key: 'stationOffset', width: 12 },
     { header: '备注', key: 'notes', width: 30 }
   ]
-  styleHeader(resWs, 1, 5, layout)
+  styleHeader(resWs, 1, 11, layout)
   project.resources.forEach(r => {
-    const row = resWs.addRow({ id: r.id, name: r.name, type: r.type ?? '', color: r.color ?? '', notes: r.notes ?? '' })
+    const row = resWs.addRow({
+      id: r.id, name: r.name, type: r.type ?? '', color: r.color ?? '',
+      parentId: r.parentId ?? '',
+      slotIndex: r.slotIndex ?? '',
+      slots: r.motion?.type === 'rotary' ? r.motion.slots : '',
+      step: r.motion?.type === 'rotary' ? r.motion.stepPerCycle : '',
+      startSlot: r.motion?.type === 'rotary' ? (r.motion.startSlot ?? 0) : '',
+      stationOffset: r.motion?.type === 'rotary' ? (r.motion.stationOffset ?? 0) : '',
+      notes: r.notes ?? ''
+    })
     row.height = layout.rowHeight
     row.font = { size: layout.fontSize }
     if (r.color) resWs.getCell(row.number, 4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(r.color) } }
+    ;[6, 7, 8, 9, 10].forEach(c => { resWs.getCell(row.number, c).numFmt = '#,##0' })
   })
 
   // ---- Sheet 5: exact-window claims (many-to-many) ---------------------
@@ -318,13 +344,15 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
     { header: '动作编号', key: 'taskCode', width: 14 },
     { header: '资源ID', key: 'resourceId', width: 24 },
     { header: '资源名称', key: 'resourceName', width: 18 },
+    { header: '目标模式', key: 'slotMode', width: 14 },
     { header: '偏移(ms)', key: 'offsetMs', width: 12 },
     { header: '占用时长(ms)', key: 'durationMs', width: 16 },
     { header: '起(ms)', key: 'startMs', width: 12 },
     { header: '止(ms)', key: 'endMs', width: 12 },
+    { header: '来源', key: 'source', width: 12 },
     { header: '备注', key: 'notes', width: 24 }
   ]
-  styleHeader(allocWs, 1, 9, layout)
+  styleHeader(allocWs, 1, 11, layout)
   const resourceById = new Map(project.resources.map(r => [r.id, r]))
   project.allocations.forEach(a => {
     const task = schedule.byId[a.taskId]
@@ -333,15 +361,17 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
       taskCode: task?.code ?? a.taskId,
       resourceId: a.resourceId,
       resourceName: resourceById.get(a.resourceId)?.name ?? a.resourceId,
+      slotMode: a.slotMode === 'activeSlot' ? '当前选中槽位' : '资源本身',
       offsetMs: a.offsetMs,
       durationMs: a.durationMs,
       startMs: (task?.startMs ?? 0) + a.offsetMs,
       endMs: (task?.startMs ?? 0) + a.offsetMs + a.durationMs,
+      source: a.source ?? 'manual',
       notes: a.notes ?? ''
     })
     row.height = layout.rowHeight
     row.font = { size: layout.fontSize }
-    ;[5, 6, 7, 8].forEach(c => { allocWs.getCell(row.number, c).numFmt = '#,##0' })
+    ;[6, 7, 8, 9].forEach(c => { allocWs.getCell(row.number, c).numFmt = '#,##0' })
   })
 
   const buffer = await workbook.xlsx.writeBuffer()
@@ -365,7 +395,11 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
     const headers = Array.from(ws.getRow(1).values as ExcelJS.CellValue[])
       .map(v => cellText(v).trim())
     const findCol = (...names: string[]) => {
-      const index = headers.findIndex(h => names.some(n => h === n || h.includes(n)))
+      // Exact matches win: a header like 映射资源ID must not shadow the plain
+      // ID column when looking up `findCol('ID')` by substring.
+      const exact = headers.findIndex(h => names.some(n => h === n))
+      if (exact >= 0) return exact
+      const index = headers.findIndex(h => names.some(n => h.includes(n)))
       return index >= 0 ? index : -1
     }
     const col = {
@@ -376,6 +410,7 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
       mechanism: findCol('机构'),
       action: findCol('动作/子动作', '动作'),
       stage: findCol('阶段'),
+      resourceId: findCol('映射资源ID', '映射资源'),
       startMs: findCol('开始 (ms)', '开始'),
       anchorMs: findCol('锚定起始', 'anchorMs'),
       durationMs: findCol('持续 (ms)', '持续'),
@@ -441,6 +476,7 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
         moduleName,
         actionDescription,
         stage: text(row, 'stage') || undefined,
+        resourceId: kind === 'mechanism' ? (text(row, 'resourceId') || undefined) : undefined,
         color: text(row, 'color') || MODULE_COLORS[drafts.length % MODULE_COLORS.length],
         startMs,
         anchorMs: Math.max(0, Math.round(number(row, 'anchorMs', startMs))),
@@ -483,7 +519,12 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
     let timeConfig = normalizeTimeConfig(DEFAULT_TIME_CONFIG)
     let excelLayout: ExcelLayoutConfig = { ...DEFAULT_EXCEL_LAYOUT, columnWidths: { ...DEFAULT_EXCEL_LAYOUT.columnWidths } }
     let cycleConfig = normalizeCycleConfig(undefined)
+    let ganttConfig: GanttConfig = { ...DEFAULT_GANTT_CONFIG }
+    let canvasConfig: CanvasConfig = { ...DEFAULT_CANVAS_CONFIG }
     let projectName: string | undefined
+    let version: string | undefined
+    let createdAt: string | undefined
+    let updatedAt: string | undefined
     const meta = workbook.getWorksheet(SHEET_META)
     if (meta) {
       const settings = new Map<string, string>()
@@ -525,6 +566,15 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
           catch { return excelLayout.columnWidths }
         })()
       }
+      try {
+        ganttConfig = { ...ganttConfig, ...JSON.parse(settings.get('ganttConfig') ?? '{}') }
+      } catch { /* keep defaults for older workbooks */ }
+      try {
+        canvasConfig = { ...canvasConfig, ...JSON.parse(settings.get('canvasConfig') ?? '{}') }
+      } catch { /* keep defaults for older workbooks */ }
+      version = settings.get('version')
+      createdAt = settings.get('createdAt')
+      updatedAt = settings.get('updatedAt')
       // Sheet 3 dependency rows are authoritative if present.
       if (extra.size > 0) {
         drafts.forEach(d => {
@@ -562,12 +612,25 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
         const id = cellText(row.getCell(1).value).trim()
         const name = cellText(row.getCell(2).value).trim()
         if (!name && !id) continue
+        const parentId = cellText(row.getCell(5).value).trim() || undefined
+        const slotIndexRaw = cellText(row.getCell(6).value).trim()
+        const slots = cellNumber(row.getCell(7).value)
+        const motion = slots > 0 ? {
+          type: 'rotary' as const,
+          slots: Math.max(1, Math.round(slots)),
+          stepPerCycle: Math.round(cellNumber(row.getCell(8).value)),
+          startSlot: Math.max(0, Math.round(cellNumber(row.getCell(9).value))),
+          stationOffset: Math.round(cellNumber(row.getCell(10).value))
+        } : undefined
         resources.push({
           id: id || uuidv4(),
           name: name || id,
           type: cellText(row.getCell(3).value).trim() || undefined,
           color: cellText(row.getCell(4).value).trim() || undefined,
-          notes: cellText(row.getCell(5).value).trim() || undefined
+          parentId,
+          slotIndex: slotIndexRaw ? Math.max(0, Math.round(Number(slotIndexRaw) || 0)) : undefined,
+          motion,
+          notes: cellText(row.getCell(11).value).trim() || undefined
         })
       }
     }
@@ -584,8 +647,11 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
         const resourceKey = cellText(row.getCell(3).value).trim() || cellText(row.getCell(4).value).trim()
         const taskId = resolve(taskCode)
         const resourceId = resourceByKey.get(resourceKey)
-        const offsetMs = Math.max(0, Math.round(cellNumber(row.getCell(5).value)))
-        const durationMs = Math.max(0, Math.round(cellNumber(row.getCell(6).value)))
+        const slotModeText = cellText(row.getCell(5).value).trim()
+        const slotMode = slotModeText === '当前选中槽位' || slotModeText.toLowerCase() === 'activeslot'
+          ? ('activeSlot' as const) : undefined
+        const offsetMs = Math.max(0, Math.round(cellNumber(row.getCell(6).value)))
+        const durationMs = Math.max(0, Math.round(cellNumber(row.getCell(7).value)))
         if (!taskId || !resourceId || durationMs <= 0) {
           if (taskCode || resourceKey) warnings.push(`占用行 ${r} 的动作或资源未找到，已跳过`)
           continue
@@ -594,9 +660,10 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
           id: templateIdOf(cellText(row.getCell(1).value).trim()) || uuidv4(),
           taskId,
           resourceId,
+          slotMode,
           offsetMs,
           durationMs,
-          notes: cellText(row.getCell(9).value).trim() || undefined
+          notes: cellText(row.getCell(11).value).trim() || undefined
         })
       }
     }
@@ -614,7 +681,12 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
       timeConfig,
       cycleConfig,
       excelLayout,
+      ganttConfig,
+      canvasConfig,
       projectName,
+      version,
+      createdAt,
+      updatedAt,
       warnings
     }
   } catch (error) {

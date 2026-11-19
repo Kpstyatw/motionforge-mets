@@ -4,75 +4,118 @@ import { useProjectStore } from '@/stores/useProjectStore'
 import { importCSVFile } from '@/services/csvImport'
 import { toast } from '@/components/ui/use-toast'
 import { IS_ONLINE, ONLINE_ROW_LIMIT } from '@/lib/platform'
+import { normalizeTimeConfig } from '@/lib/timeScale'
 import { base64ToBytes } from '@/lib/binary'
+import { parseProjectJson } from '@/services/jsonProject'
+import { ProjectFileFormat } from '@/types'
 
 /**
- * Single file-import entry for the toolbar. Routes by extension:
- *   .csv        -> CSV importer (original 5 columns + Gantt extensions)
- *   .xlsx/.xlsm -> Gantt workbook importer (5 sheets, incl. resources)
+ * Two file entries for the toolbar:
+ *   open    -> .json only, a complete project snapshot (modules + resources +
+ *              dependencies + cycle and layout settings)
+ *   import  -> .csv / .xlsx only, tabular data (CSV rows optionally carry the
+ *              same full snapshot in a metadata column)
  *
- * Both formats create a project when none exists, so the very first action in
- * a fresh session can be "import" — no CSV-before-Excel prerequisite.
+ * Both create a project when none exists, so a fresh session can start with
+ * either action. The file dialog filters match the entry point so users do
+ * not accidentally open a JSON project through "Import" or vice versa.
  */
 export function useCSVImport() {
   const { t } = useTranslation()
   const [isImporting, setIsImporting] = useState(false)
-  const { updateModules, createNewProject, loadProject, project, setTimeConfig, setSourceFile } = useProjectStore()
+  const { createNewProject, loadProject, project, setSourceFile } = useProjectStore()
 
-  /** Pick a file: native Electron dialog or a web <input>, both accepting CSV + Excel. */
-  const handleImport = async () => {
+  type SourceInfo = { path?: string; name: string; kind: ProjectFileFormat }
+  type PickKind = 'project' | 'data'
+
+  const fileKind = (name: string): ProjectFileFormat =>
+    /\.(xlsx|xlsm)$/i.test(name) ? 'xlsx' : /\.json$/i.test(name) ? 'json' : 'csv'
+
+  /** Pick one file with filters matching the entry point (project = JSON only). */
+  const pickFile = async (kind: PickKind): Promise<{ file: File; source: SourceInfo } | null> => {
+    const accept = kind === 'project' ? '.json' : '.csv,.xlsx,.xlsm'
     if (!window.electronAPI) {
-      const input = document.createElement('input')
-      input.type = 'file'
-      input.accept = '.csv,.xlsx,.xlsm'
-      input.onchange = async (e) => {
-        const file = (e.target as HTMLInputElement).files?.[0]
-        if (file) await processFile(file, { name: file.name, kind: /\.(xlsx|xlsm)$/i.test(file.name) ? 'xlsx' : 'csv' })
-      }
-      input.click()
-    } else {
-      try {
-        const result = await window.electronAPI.openFile()
-        if (!result.canceled && result.filePaths.length > 0) {
-          const filePath = result.filePaths[0]
-          const name = filePath.split(/[\\/]/).pop() || 'data.csv'
-          const isExcel = /\.(xlsx|xlsm)$/i.test(name)
-          // Text files use the legacy UTF-8 channel; spreadsheets must keep
-          // their bytes intact or ExcelJS sees a corrupted zip archive.
-          const fileResult = isExcel
-            ? await window.electronAPI.readFileBinary(filePath)
-            : await window.electronAPI.readFile(filePath)
-          if (fileResult.success && fileResult.data) {
-            const payload = isExcel
-              ? base64ToBytes(fileResult.data)
-              : fileResult.data
-            const type = isExcel
-              ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-              : 'text/csv'
-            await processFile(new File([payload], name, { type }), { path: filePath, name, kind: isExcel ? 'xlsx' : 'csv' })
-          } else {
-            toast({ variant: 'destructive', title: t('error.fileNotFound'), description: fileResult.error })
-          }
+      return new Promise(resolve => {
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = accept
+        input.onchange = (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0]
+          resolve(file ? { file, source: { name: file.name, kind: fileKind(file.name) } } : null)
         }
-      } catch (error) {
-        console.error('Error opening file dialog:', error)
-        toast({
-          variant: 'destructive', title: t('error.importFailed'),
-          description: error instanceof Error ? error.message : t('error.unknown')
-        })
+        input.oncancel = () => resolve(null)
+        input.click()
+      })
+    }
+    try {
+      const result = await window.electronAPI.openFile(kind)
+      if (result.canceled || result.filePaths.length === 0) return null
+      const filePath = result.filePaths[0]
+      const name = filePath.split(/[\\/]/).pop() || (kind === 'project' ? 'project.json' : 'data.csv')
+      const sourceKind = fileKind(name)
+      // Text files (CSV/JSON) use the UTF-8 channel; spreadsheets must keep
+      // their bytes intact or ExcelJS sees a corrupted zip archive.
+      const fileResult = sourceKind === 'xlsx'
+        ? await window.electronAPI.readFileBinary(filePath)
+        : await window.electronAPI.readFile(filePath)
+      if (!fileResult.success || !fileResult.data) {
+        toast({ variant: 'destructive', title: t('error.fileNotFound'), description: fileResult.error })
+        return null
       }
+      const payload = sourceKind === 'xlsx' ? base64ToBytes(fileResult.data) : fileResult.data
+      const type = sourceKind === 'xlsx'
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : sourceKind === 'json' ? 'application/json' : 'text/csv'
+      return {
+        file: new File([payload], name, { type }),
+        source: { path: filePath, name, kind: sourceKind }
+      }
+    } catch (error) {
+      console.error('Error opening file dialog:', error)
+      toast({
+        variant: 'destructive', title: t('error.importFailed'),
+        description: error instanceof Error ? error.message : t('error.unknown')
+      })
+      return null
     }
   }
 
-  type SourceInfo = { path?: string; name: string; kind: 'xlsx' | 'csv' }
+  /** "Open" — complete project snapshot, .json only. */
+  const handleOpen = async () => {
+    const picked = await pickFile('project')
+    if (!picked) return
+    if (picked.source.kind !== 'json') {
+      toast({
+        variant: 'destructive', title: t('json.importFailed', { defaultValue: 'JSON 导入失败' }),
+        description: t('error.unsupportedProjectFile', { defaultValue: '“打开”只支持 .json 项目文件；CSV / Excel 请使用“导入”。' })
+      })
+      return
+    }
+    await processJsonFile(picked.file, picked.source)
+  }
+
+  /** "Import" — tabular data, .csv / .xlsx only. */
+  const handleImport = async () => {
+    const picked = await pickFile('data')
+    if (!picked) return
+    if (picked.source.kind === 'json') {
+      toast({
+        variant: 'destructive', title: t('error.invalidFormat'),
+        description: t('error.unsupportedImportFile', { defaultValue: '“导入”只支持 CSV / Excel；JSON 项目文件请使用“打开”。' })
+      })
+      return
+    }
+    await processFile(picked.file, picked.source)
+  }
 
   const processFile = async (file: File, source?: SourceInfo) => {
-    const name = file.name.toLowerCase()
-    if (name.endsWith('.xlsx') || name.endsWith('.xlsm')) await processExcelFile(file, source)
-    else if (name.endsWith('.csv')) await processCSVFile(file, source)
+    const kind = fileKind(file.name)
+    if (kind === 'xlsx') await processExcelFile(file, source)
+    else if (kind === 'json') await processJsonFile(file, source)
+    else if (/\.csv$/i.test(file.name)) await processCSVFile(file, source)
     else toast({
       variant: 'destructive', title: t('error.invalidFormat'),
-      description: t('error.unsupportedFile', { defaultValue: '请选择 .csv 或 .xlsx 文件' })
+      description: t('error.unsupportedFile', { defaultValue: '请选择 .csv、.xlsx 或 .json 文件' })
     })
   }
 
@@ -87,10 +130,22 @@ export function useCSVImport() {
         })
       } else if (result.success && result.data) {
         if (!project) createNewProject()
-        // Apply the file's scale/precision before scheduling so canonical ms
-        // values snap to the right quantum.
-        if (result.timeConfig) setTimeConfig(result.timeConfig)
-        updateModules(result.data)
+        const meta = result.projectMeta
+        loadProject({
+          ...(project ?? {}),
+          name: meta?.name ?? project?.name ?? 'Imported Project',
+          modules: result.data,
+          resources: meta?.resources?.length ? meta.resources : (project?.resources ?? []),
+          allocations: meta?.allocations?.length ? meta.allocations : (project?.allocations ?? []),
+          timeConfig: normalizeTimeConfig(result.timeConfig ?? project?.timeConfig),
+          cycleConfig: meta?.cycleConfig ?? project?.cycleConfig,
+          excelLayout: meta?.excelLayout ?? project?.excelLayout,
+          ganttConfig: meta?.ganttConfig ?? project?.ganttConfig,
+          canvasConfig: meta?.canvasConfig ?? project?.canvasConfig,
+          createdAt: meta?.createdAt ?? project?.createdAt,
+          updatedAt: meta?.updatedAt ?? project?.updatedAt,
+          version: meta?.version ?? project?.version
+        })
         setSourceFile(source ?? { name: file.name, kind: 'csv' })
         toast({
           title: t('toolbar.importCSV'),
@@ -141,7 +196,12 @@ export function useCSVImport() {
         allocations: result.allocations?.length ? result.allocations : (project?.allocations ?? []),
         timeConfig: result.timeConfig,
         cycleConfig: result.cycleConfig,
-        excelLayout: result.excelLayout
+        excelLayout: result.excelLayout,
+        ganttConfig: result.ganttConfig ?? project?.ganttConfig,
+        canvasConfig: result.canvasConfig ?? project?.canvasConfig,
+        createdAt: result.createdAt ?? project?.createdAt,
+        updatedAt: result.updatedAt ?? project?.updatedAt,
+        version: result.version ?? project?.version
       })
       setSourceFile(source ?? { name: file.name, kind: 'xlsx' })
       toast({
@@ -159,14 +219,49 @@ export function useCSVImport() {
     }
   }
 
+  const processJsonFile = async (file: File, source?: SourceInfo) => {
+    setIsImporting(true)
+    try {
+      const result = parseProjectJson(await file.text())
+      if (!result.success || !result.project) {
+        toast({
+          variant: 'destructive', title: t('json.importFailed', { defaultValue: 'JSON 导入失败' }),
+          description: result.error
+        })
+        return
+      }
+      if (IS_ONLINE && result.project.modules.length > ONLINE_ROW_LIMIT) {
+        toast({
+          variant: 'destructive', title: t('error.importFailed'),
+          description: t('online.rowLimit', { limit: ONLINE_ROW_LIMIT, count: result.project.modules.length })
+        })
+        return
+      }
+      loadProject(result.project)
+      setSourceFile(source ?? { name: file.name, kind: 'json' })
+      toast({
+        title: t('json.importOk', { defaultValue: 'JSON 项目已导入' }),
+        description: t('toolbar.importSuccess', { count: result.project.modules.length })
+      })
+    } catch (error) {
+      toast({
+        variant: 'destructive', title: t('json.importFailed', { defaultValue: 'JSON 导入失败' }),
+        description: error instanceof Error ? error.message : t('error.unknown')
+      })
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
   /** Import CSV text that did not come from a file: a share link or bundled sample. */
   const importCSVText = async (csv: string, name: string) => {
     await processCSVFile(new File([csv], name, { type: 'text/csv' }))
   }
 
   return {
+    handleOpen,
     handleImport,
-    /** Backwards-compatible alias used by the keyboard shortcut. */
+    /** Backwards-compatible alias used by older callers. */
     handleImportCSV: handleImport,
     importCSVText,
     isImporting

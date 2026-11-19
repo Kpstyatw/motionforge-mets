@@ -6,7 +6,8 @@
   "menu": {
     "file": {
       "title": "ファイル",
-      "import": "CSVをインポート",
+      "open": "JSON プロジェクトを開く (Ctrl+O)",
+      "import": "CSV / Excel をインポート (Ctrl+I)",
       "save": "保存",
       "saveAs": "名前を付けて保存",
       "export": {
@@ -74,6 +75,7 @@
   "toolbar": {
     "importCSV": "CSVをインポート",
     "importSuccess": "{{count}} 件のデータをインポートしました",
+    "openProject": "JSON プロジェクトを開く (Ctrl+O)",
     "importFile": "CSV / Excel を読み込む (Ctrl+I)"
   },
   "timeline": {
@@ -120,7 +122,9 @@
     "importFailed": "インポートに失敗しました",
     "exportFailed": "エクスポートに失敗しました",
     "unknown": "不明なエラー",
-    "unsupportedFile": ".csv または .xlsx ファイルを選択してください"
+    "unsupportedFile": ".csv または .xlsx ファイルを選択してください",
+    "unsupportedProjectFile": "「開く」は .json プロジェクトファイルのみ対応です。CSV / Excel は「インポート」を使用してください。",
+    "unsupportedImportFile": "「インポート」は CSV / Excel のみ対応です。JSON プロジェクトは「開く」を使用してください。"
   },
   "settings": {
     "title": "設定",
@@ -136,6 +140,14 @@
       "title": "グリッド設定",
       "cellWidth": "セル幅",
       "cellHeight": "セル高"
+    },
+    "file": {
+      "title": "既定のファイル形式",
+      "defaultFormat": "保存 / 名前を付けて保存の既定形式",
+      "json": "JSON プロジェクト（推奨）",
+      "excel": "Excel ブック (.xlsx)",
+      "csv": "CSV プロジェクト（メタデータ列付き）",
+      "hint": "関連付け済みのファイルは Ctrl+S で元の形式に書き戻されます。CSV の __project_json 列は削除しないでください。"
     },
     "animation": {
       "title": "アニメーション設定",
@@ -422,6 +434,9 @@
     "includeHidden": "折りたたんで非表示の子動作も出力",
     "export": "Excel を書き出す",
     "import": "Excel を読み込む（ガントへ反映）",
+    "importWithLayout": "Excel を読み込む（レイアウトも反映）",
+    "openWorkbench": "Excel ワークベンチを開く",
+    "closeSave": "設定を保存して閉じる",
     "verify": "整合性を検証",
     "verified": "{{count}} 行を検証しました。図表と表のデータは一致し、矛盾はありません。",
     "issues": "件の不一致",
@@ -466,7 +481,21 @@
     "noResource": "（リソースなし。先に作成してください）",
     "needResource": "先にリソースを追加してください",
     "invalidNumber": "オフセットと時間は数値で入力",
-    "zeroDuration": "占有時間は 0 より大きく（動作時間内）"
+    "zeroDuration": "占有時間は 0 より大きく（動作時間内）",
+    "slotIndex": "スロット番号",
+    "addSlot": "子スロットを追加",
+    "rotary": "回転ディスク",
+    "slots": "スロット数",
+    "step": "周期あたりの移動",
+    "startSlotLabel": "開始スロット",
+    "rotaryLane": "回転ディスク：各周期で1つの子スロットを選択",
+    "mapResource": "リソースのマッピング（物理モジュール → 抽象リソース）",
+    "noMapping": "（マッピングなし · 自動占有なし）",
+    "mapHint": "マッピングすると、この機構配下の全アクションが実行中に当該リソースを自動占有します（派生のみ、占有表には書き込みません）。",
+    "targetMode": "占有対象",
+    "fixedSlot": "リソース自体",
+    "activeSlot": "現在の選択スロット",
+    "activeSlotHint": "アクションの周期から選択スロットへ解決します"
   },
   "cycle": {
     "title": "固定サイクル設定",
@@ -488,5 +517,9 @@
     "ok": "保存しました",
     "failed": "保存に失敗しました",
     "empty": "保存するデータがありません"
+  },
+  "json": {
+    "importOk": "JSON プロジェクトを読み込みました",
+    "importFailed": "JSON の読み込みに失敗しました"
   }
 }

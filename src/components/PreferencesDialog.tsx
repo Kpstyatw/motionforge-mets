@@ -1,6 +1,7 @@
 // import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { usePreferencesStore } from '@/stores/usePreferencesStore'
+import { ProjectFileFormat } from '@/types'
 import { FaCog, FaTimes } from 'react-icons/fa'
 
 interface PreferencesDialogProps {
@@ -14,9 +15,11 @@ export function PreferencesDialog({ isOpen, onClose }: PreferencesDialogProps) {
     grid,
     animation,
     ui,
+    file,
     updateGridPreferences,
     updateAnimationPreferences,
     updateUIPreferences,
+    updateFilePreferences,
     resetToDefaults
   } = usePreferencesStore()
 
@@ -96,6 +99,27 @@ export function PreferencesDialog({ isOpen, onClose }: PreferencesDialogProps) {
                   <span className="text-sm text-gray-500 w-6">px</span>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Default project file format */}
+          <div>
+            <h3 className="text-md font-medium mb-3">{t('preferences.file.title')}</h3>
+            <div>
+              <label htmlFor="default-file-format" className="block text-sm font-medium mb-1">
+                {t('preferences.file.defaultFormat')}
+              </label>
+              <select
+                id="default-file-format"
+                value={file.defaultFormat}
+                onChange={(e) => updateFilePreferences({ defaultFormat: e.target.value as ProjectFileFormat })}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded bg-white dark:bg-gray-700"
+              >
+                <option value="json">{t('preferences.file.json')}</option>
+                <option value="xlsx">{t('preferences.file.excel')}</option>
+                <option value="csv">{t('preferences.file.csv')}</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">{t('preferences.file.hint')}</p>
             </div>
           </div>
 
@@ -222,7 +246,7 @@ export function PreferencesDialog({ isOpen, onClose }: PreferencesDialogProps) {
             onClick={onClose}
             className="px-4 py-2 text-sm bg-primary text-white rounded hover:bg-primary/90"
           >
-            Close
+            {t('dialog.close', { defaultValue: '关闭' })}
           </button>
         </div>
       </div>

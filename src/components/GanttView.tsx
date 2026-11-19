@@ -46,13 +46,12 @@ type GroupBy = 'flow' | 'resource'
 interface GanttViewProps {
   onEditTask: (id: string) => void
   onOpenTimeScale: () => void
-  onOpenExcel: () => void
   onAddChild: (parentId: string | null) => void
   onManageResources: () => void
 }
 
 export const GanttView: React.FC<GanttViewProps> = ({
-  onEditTask, onOpenTimeScale, onOpenExcel, onAddChild, onManageResources
+  onEditTask, onOpenTimeScale, onAddChild, onManageResources
 }) => {
   const { t } = useTranslation()
   const { project, setGanttConfig, setCycleConfig } = useProjectStore()
@@ -235,9 +234,6 @@ export const GanttView: React.FC<GanttViewProps> = ({
         <div className="flex items-center gap-1 border-l pl-2">
           <button onClick={() => onAddChild(selectedTaskId ? templateIdOf(selectedTaskId) : null)} className="px-2 py-1 border rounded hover:bg-accent flex items-center gap-1">
             <Plus className="h-3 w-3" />{t('gantt.addChild', { defaultValue: '新增下级' })}
-          </button>
-          <button onClick={onOpenExcel} className="px-2 py-1 border rounded hover:bg-accent">
-            {t('gantt.excel', { defaultValue: 'Excel 转换' })}
           </button>
         </div>
       </div>

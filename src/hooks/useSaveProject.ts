@@ -2,9 +2,10 @@ import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { usePreferencesStore } from '@/stores/usePreferencesStore'
 import { useCycleView } from '@/hooks/useCycleView'
 import { flattenTree } from '@/lib/dependencyEngine'
-import { saveProjectExcel } from '@/services/saveProject'
+import { saveProjectFile } from '@/services/saveProject'
 import { toast } from '@/components/ui/use-toast'
 
 /**
@@ -15,6 +16,7 @@ export function useSaveProject() {
   const { t } = useTranslation()
   const { project, sourceFile, setSourceFile, setUnsavedChanges } = useProjectStore()
   const { collapsedTaskIds } = useUIStore()
+  const defaultFormat = usePreferencesStore(s => s.file.defaultFormat)
   const { schedule, expansion } = useCycleView()
   const [isSaving, setIsSaving] = useState(false)
 
@@ -28,14 +30,19 @@ export function useSaveProject() {
     setIsSaving(true)
     try {
       const rows = flattenTree(schedule, new Set(collapsedTaskIds))
-      const result = await saveProjectExcel({
+      // An existing file keeps its own format on Ctrl+S; new projects and
+      // Save As follow the preference. This prevents silently changing a
+      // shared .xlsx into .json just because the default was changed.
+      const format = sourceFile && !forceSaveAs ? sourceFile.kind : defaultFormat
+      const result = await saveProjectFile({
         project,
         schedule,
         rows,
         allocations: expansion.allocations,
         cycleConfig: expansion.config,
         sourceFile,
-        forceSaveAs
+        forceSaveAs,
+        format
       })
       if (result.canceled) return
       if (!result.saved) {
@@ -43,20 +50,22 @@ export function useSaveProject() {
         return
       }
       if (result.path) {
-        const kind = /\.csv$/i.test(result.path) ? 'csv' : 'xlsx'
-        setSourceFile({ path: result.path, name: result.target, kind })
+        setSourceFile({ path: result.path, name: result.target, kind: result.format })
       } else if (!sourceFile) {
         // Web download: remember just the name so the UI can show it.
-        setSourceFile({ name: result.target, kind: 'xlsx' })
+        setSourceFile({ name: result.target, kind: result.format })
       }
       setUnsavedChanges(false)
-      toast({ title: t('save.ok', { defaultValue: '已保存' }), description: result.target })
+      toast({
+        title: t('save.ok', { defaultValue: '已保存' }),
+        description: result.warning ? `${result.target} · ${result.warning}` : result.target
+      })
     } catch (error) {
       toast({ variant: 'destructive', title: t('save.failed', { defaultValue: '保存失败' }), description: String(error) })
     } finally {
       setIsSaving(false)
     }
-  }, [project, isSaving, schedule, expansion, collapsedTaskIds, sourceFile, setSourceFile, setUnsavedChanges, t])
+  }, [project, isSaving, schedule, expansion, collapsedTaskIds, sourceFile, defaultFormat, setSourceFile, setUnsavedChanges, t])
 
   return { save, saveAs: () => save(true), isSaving, sourceFile }
 }

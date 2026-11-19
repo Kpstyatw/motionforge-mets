@@ -1,9 +1,11 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
-import { Plus, Trash2 } from 'lucide-react'
+import { resourceDepth } from '@/lib/resourceTree'
+import { Resource } from '@/types'
+import { Plus, Trash2, ChevronRight, ChevronDown } from 'lucide-react'
 
-/** Global resource catalogue editor: mechanisms / motors / actuators. */
+/** Global resource catalogue editor: physical-module → abstract-resource mapping. */
 interface Props {
   isOpen: boolean
   onClose: () => void
@@ -11,14 +13,34 @@ interface Props {
 
 const PALETTE = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#14b8a6', '#f97316', '#ec4899']
 
+/** Order resources parent-first so children render under their parent. */
+function treeOrder(resources: Resource[]): Resource[] {
+  const out: Resource[] = []
+  const seen = new Set<string>()
+  const visit = (parentId: string | undefined) => {
+    resources.filter(r => (r.parentId ?? undefined) === parentId).forEach(r => {
+      if (seen.has(r.id)) return
+      seen.add(r.id)
+      out.push(r)
+      visit(r.id)
+    })
+  }
+  visit(undefined)
+  resources.forEach(r => { if (!seen.has(r.id)) { seen.add(r.id); out.push(r) } })
+  return out
+}
+
 export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose }) => {
   const { t } = useTranslation()
-  const { project, addResource, updateResource, removeResource } = useProjectStore()
+  const {
+    project, addResource, updateResource, removeResource, setResourceMotion, addChildResource
+  } = useProjectStore()
   const [name, setName] = useState('')
   const [type, setType] = useState('')
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   if (!isOpen || !project) return null
-  const resources = project.resources
+  const resources = treeOrder(project.resources)
 
   const submit = () => {
     if (!name.trim()) return
@@ -31,31 +53,81 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-background text-foreground rounded-lg shadow-xl w-[560px] max-w-[95vw] max-h-[88vh] overflow-y-auto border">
+      <div className="bg-background text-foreground rounded-lg shadow-xl w-[680px] max-w-[95vw] max-h-[88vh] overflow-y-auto border">
         <div className="flex items-center justify-between px-5 py-3 border-b sticky top-0 bg-background z-10">
-          <h2 className="text-base font-semibold">{t('resource.managerTitle', { defaultValue: '资源管理（机构 / 电机）' })}</h2>
+          <h2 className="text-base font-semibold">{t('resource.managerTitle', { defaultValue: '资源管理（物理模块 → 抽象资源）' })}</h2>
           <button onClick={onClose} className="text-xl text-muted-foreground hover:text-foreground">×</button>
         </div>
         <div className="p-5 space-y-4">
           <div className="text-xs text-muted-foreground bg-muted/40 border rounded p-2">
-            {t('resource.managerHint', { defaultValue: '资源只定义一次，供所有流程的动作共用。在任务的「资源占用」里引用它们，无需在各流程重复新建机构。' })}
+            {t('resource.managerHint', { defaultValue: '模块 / 机构是仪器里的物理模块；资源是在物理模块与流程基础上抽象出的可占用单元。机构可在任务编辑器里映射到资源，映射后其下动作执行期自动占用该资源。' })}
           </div>
 
           <section className="border rounded-lg divide-y">
             {resources.map(r => {
+              const depth = resourceDepth(r.id, project.resources)
+              const childCount = project.resources.filter(x => x.parentId === r.id).length
               const usage = project.allocations.filter(a => a.resourceId === r.id).length
+              const isOpen = expanded[r.id] !== false
+              const motion = r.motion
               return (
-                <div key={r.id} className="flex items-center gap-2 px-3 py-2">
-                  <input type="color" value={r.color || '#6366f1'} className="w-7 h-7 border-0 bg-transparent p-0 cursor-pointer"
-                    onChange={e => updateResource(r.id, { color: e.target.value })} />
-                  <input className="flex-1 px-1 py-0.5 text-sm border rounded bg-background" value={r.name}
-                    onChange={e => updateResource(r.id, { name: e.target.value })} />
-                  <input className="w-24 px-1 py-0.5 text-xs border rounded bg-background" value={r.type ?? ''} placeholder={t('resource.type', { defaultValue: '类型' })}
-                    onChange={e => updateResource(r.id, { type: e.target.value })} />
-                  <span className="text-[10px] text-muted-foreground w-16 text-right tabular-nums">{usage} {t('resource.uses', { defaultValue: '处引用' })}</span>
-                  <button onClick={() => removeResource(r.id)} className="p-1 text-red-500 hover:bg-red-500/10 rounded" title={t('resource.remove', { defaultValue: '删除资源' })}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                <div key={r.id} className="px-3 py-2" style={{ paddingLeft: 12 + depth * 18 }}>
+                  <div className="flex items-center gap-2">
+                    {childCount > 0 ? (
+                      <button onClick={() => setExpanded(e => ({ ...e, [r.id]: !isOpen }))} className="p-0.5 text-muted-foreground">
+                        {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                      </button>
+                    ) : <span className="w-4" />}
+                    <input type="color" value={r.color || '#6366f1'} className="w-7 h-7 border-0 bg-transparent p-0 cursor-pointer"
+                      onChange={e => updateResource(r.id, { color: e.target.value })} />
+                    <input className="flex-1 min-w-0 px-1 py-0.5 text-sm border rounded bg-background" value={r.name}
+                      onChange={e => updateResource(r.id, { name: e.target.value })} />
+                    <input className="w-24 px-1 py-0.5 text-xs border rounded bg-background" value={r.type ?? ''} placeholder={t('resource.type', { defaultValue: '类型' })}
+                      onChange={e => updateResource(r.id, { type: e.target.value })} />
+                    {r.slotIndex !== undefined && (
+                      <span className="text-[10px] text-muted-foreground tabular-nums" title={t('resource.slotIndex', { defaultValue: '槽位索引' })}>
+                        #{r.slotIndex}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-muted-foreground w-16 text-right tabular-nums">{usage} {t('resource.uses', { defaultValue: '处引用' })}</span>
+                    {!r.parentId && (
+                      <button onClick={() => addChildResource(r.id)} className="p-1 text-primary hover:bg-primary/10 rounded"
+                        title={t('resource.addSlot', { defaultValue: '添加子槽位' })}>
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button onClick={() => removeResource(r.id)} className="p-1 text-red-500 hover:bg-red-500/10 rounded" title={t('resource.remove', { defaultValue: '删除资源' })}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  {isOpen && !r.parentId && (
+                    <div className="mt-1.5 ml-6 flex items-center gap-2 text-[11px] text-muted-foreground flex-wrap">
+                      <label className="flex items-center gap-1">
+                        <input type="checkbox" checked={Boolean(motion)} onChange={e => {
+                          if (e.target.checked) setResourceMotion(r.id, { type: 'rotary', slots: Math.max(1, childCount || 8), stepPerCycle: 1, startSlot: 0 })
+                          else setResourceMotion(r.id, null)
+                        }} />
+                        {t('resource.rotary', { defaultValue: '旋转' })}
+                      </label>
+                      {motion && (
+                        <>
+                          <label>{t('resource.slots', { defaultValue: '槽位数' })}
+                            <input className="w-12 ml-1 px-1 border rounded bg-background tabular-nums" type="number" min={1} max={360}
+                              value={motion.slots} onChange={e => setResourceMotion(r.id, { ...motion, slots: Number(e.target.value) })} />
+                          </label>
+                          <label>{t('resource.step', { defaultValue: '每周期步进' })}
+                            <input className="w-12 ml-1 px-1 border rounded bg-background tabular-nums" type="number"
+                              value={motion.stepPerCycle} onChange={e => setResourceMotion(r.id, { ...motion, stepPerCycle: Number(e.target.value) })} />
+                          </label>
+                          <label>{t('resource.startSlotLabel', { defaultValue: '起始槽' })}
+                            <input className="w-12 ml-1 px-1 border rounded bg-background tabular-nums" type="number" min={0}
+                              value={motion.startSlot ?? 0} onChange={e => setResourceMotion(r.id, { ...motion, startSlot: Number(e.target.value) })} />
+                          </label>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -67,7 +139,7 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose }) => {
           <section className="border rounded-lg p-3 flex items-end gap-2">
             <div className="flex-1">
               <label className="block text-xs text-muted-foreground mb-1">{t('resource.nameLabel', { defaultValue: '名称' })}</label>
-              <input className={inputClass} value={name} onChange={e => setName(e.target.value)} placeholder="管库抓手" onKeyDown={e => { if (e.key === 'Enter') submit() }} />
+              <input className={inputClass} value={name} onChange={e => setName(e.target.value)} placeholder={t('resource.newName', { defaultValue: '新资源名称（如 管库抓手）' })} onKeyDown={e => { if (e.key === 'Enter') submit() }} />
             </div>
             <div className="w-28">
               <label className="block text-xs text-muted-foreground mb-1">{t('resource.type', { defaultValue: '类型' })}</label>

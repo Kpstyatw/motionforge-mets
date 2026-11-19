@@ -245,7 +245,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onO
                 className="px-3 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1"
               >
                 <FaDownload className="text-xs" />
-                {t('export.action')}
+                {t('excel.openWorkbench', { defaultValue: '打开 Excel 工作台' })}
               </button>
             </div>
             <p className="text-sm text-gray-600 mt-1">

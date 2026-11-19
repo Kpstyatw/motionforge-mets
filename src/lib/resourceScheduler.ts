@@ -1,5 +1,7 @@
 import { Resource, ResourceAllocation } from '@/types'
 import { ScheduleResult, ScheduledTask } from './dependencyEngine'
+import { claimsShareDomain, resourceDepth, resourceIndex, resolveClaimResourceId } from './resourceTree'
+import { cycleIndexOf } from './cycleEngine'
 
 /**
  * Resource layer — pure, DOM-free, unit-testable.
@@ -18,6 +20,12 @@ export interface PlacedAllocation {
   allocation: ResourceAllocation
   task: ScheduledTask
   resource: Resource | undefined
+  /**
+   * The resource the claim actually lands on after phase resolution. For most
+   * claims this equals allocation.resourceId; for `activeSlot` claims it is the
+   * selected child slot of a rotary parent. Conflict grouping uses this id.
+   */
+  effectiveResourceId?: string
   /** Absolute start = task.startMs + allocation.offsetMs. */
   startMs: number
   /** Absolute end = start + allocation.durationMs. */
@@ -40,6 +48,8 @@ export interface ResourceConflict {
 /** One resource swim-lane for the resource Gantt view. */
 export interface ResourceLane {
   resource: Resource
+  /** Tree depth (0 = root) for indented swim-lane rendering. */
+  depth?: number
   allocations: PlacedAllocation[]
   conflicts: ResourceConflict[]
 }
@@ -63,7 +73,7 @@ export function placeAllocations(
   allocations: ResourceAllocation[],
   resources: Resource[]
 ): PlacedAllocation[] {
-  const resourceById = new Map(resources.map(r => [r.id, r]))
+  const resourceById = resourceIndex(resources)
   const placed: PlacedAllocation[] = []
   for (const allocation of allocations) {
     const task = schedule.byId[allocation.taskId]
@@ -71,10 +81,15 @@ export function placeAllocations(
     const offset = Math.max(0, Math.round(allocation.offsetMs || 0))
     const duration = Math.max(0, Math.round(allocation.durationMs || 0))
     const startMs = task.startMs + offset
+    // A claim on the owning task's cycle resolves `activeSlot` to the child
+    // slot currently aligned with the station. Multi-cycle tasks carry @Cn.
+    const cycle = task.module.cycleIndex ?? cycleIndexOf(task.id)
+    const effectiveResourceId = resolveClaimResourceId(allocation, cycle, resourceById)
     placed.push({
       allocation,
       task,
-      resource: resourceById.get(allocation.resourceId),
+      resource: resourceById.get(effectiveResourceId),
+      effectiveResourceId,
       startMs,
       endMs: startMs + duration
     })
@@ -88,38 +103,47 @@ export function placeAllocations(
  * Sorting by start lets us stop scanning a resource as soon as a later claim
  * can no longer overlap the current one.
  */
-export function detectConflicts(placed: PlacedAllocation[]): ResourceConflict[] {
-  const byResource = new Map<string, PlacedAllocation[]>()
-  for (const p of placed) {
-    const list = byResource.get(p.allocation.resourceId) ?? []
-    list.push(p)
-    byResource.set(p.allocation.resourceId, list)
-  }
-
+export function detectConflicts(
+  placed: PlacedAllocation[],
+  resources: Resource[] = []
+): ResourceConflict[] {
+  const resourceById = resourceIndex(resources)
   const conflicts: ResourceConflict[] = []
-  for (const [resourceId, list] of byResource) {
-    list.sort((x, y) => x.startMs - y.startMs || x.endMs - y.endMs)
-    for (let i = 0; i < list.length; i++) {
-      const a = list[i]
-      for (let j = i + 1; j < list.length; j++) {
-        const b = list[j]
-        if (b.startMs >= a.endMs) break // later claims start after a ends → done
-        if (a.endMs <= b.startMs || b.endMs <= a.startMs) continue
-        const overlapStartMs = Math.max(a.startMs, b.startMs)
-        const overlapEndMs = Math.min(a.endMs, b.endMs)
-        const overlapMs = overlapEndMs - overlapStartMs
-        if (overlapMs <= 0) continue
-        conflicts.push({
-          id: `${a.allocation.id}:${b.allocation.id}`,
-          resourceId,
-          resourceName: a.resource?.name ?? resourceId,
-          a,
-          b,
-          overlapMs,
-          overlapStartMs,
-          overlapEndMs
-        })
-      }
+  const seen = new Set<string>()
+
+  // Sorted globally: a claim can only overlap a later one whose start is
+  // before it ends. We compare across resources because an ancestor claim
+  // conflicts with a descendant claim even though they live on different ids.
+  const eff = (p: PlacedAllocation) => p.effectiveResourceId ?? p.allocation.resourceId
+  const sorted = [...placed].sort((x, y) => x.startMs - y.startMs || x.endMs - y.endMs)
+  for (let i = 0; i < sorted.length; i++) {
+    const a = sorted[i]
+    for (let j = i + 1; j < sorted.length; j++) {
+      const b = sorted[j]
+      if (b.startMs >= a.endMs) break // sorted by start → no later overlap
+      if (a.endMs <= b.startMs || b.endMs <= a.startMs) continue
+      // One action cannot conflict with itself — this also prevents an
+      // explicit claim and a derived mechanism claim on the same task from
+      // flagging a false positive.
+      if (a.task.id === b.task.id) continue
+      if (!claimsShareDomain(eff(a), eff(b), resourceById)) continue
+      const pairId = [a.allocation.id, b.allocation.id].sort().join('|')
+      if (seen.has(pairId)) continue
+      seen.add(pairId)
+      const overlapStartMs = Math.max(a.startMs, b.startMs)
+      const overlapEndMs = Math.min(a.endMs, b.endMs)
+      const overlapMs = overlapEndMs - overlapStartMs
+      if (overlapMs <= 0) continue
+      conflicts.push({
+        id: pairId,
+        resourceId: eff(b),
+        resourceName: b.resource?.name ?? eff(b),
+        a,
+        b,
+        overlapMs,
+        overlapStartMs,
+        overlapEndMs
+      })
     }
   }
   return conflicts.sort((x, y) => x.overlapStartMs - y.overlapStartMs)
@@ -132,18 +156,35 @@ export function computeResourceSchedule(
   resources: Resource[]
 ): ResourceSchedule {
   const placed = placeAllocations(schedule, allocations, resources)
-  const conflicts = detectConflicts(placed)
+  const conflicts = detectConflicts(placed, resources)
 
   const byResource: Record<string, PlacedAllocation[]> = {}
   for (const p of placed) {
-    ;(byResource[p.allocation.resourceId] ??= []).push(p)
+    const key = p.effectiveResourceId ?? p.allocation.resourceId
+    ;(byResource[key] ??= []).push(p)
   }
   for (const list of Object.values(byResource)) {
     list.sort((x, y) => x.startMs - y.startMs)
   }
 
-  const lanes: ResourceLane[] = resources.map(resource => ({
+  // Parent-first order so child slots render directly under their disc.
+  const byId = resourceIndex(resources)
+  const ordered: Resource[] = []
+  const seen = new Set<string>()
+  const visit = (parentId: string | undefined) => {
+    resources.filter(r => (r.parentId ?? undefined) === parentId).forEach(r => {
+      if (seen.has(r.id)) return
+      seen.add(r.id)
+      ordered.push(r)
+      visit(r.id)
+    })
+  }
+  visit(undefined)
+  resources.forEach(r => { if (!seen.has(r.id)) { seen.add(r.id); ordered.push(r) } })
+
+  const lanes: ResourceLane[] = ordered.map(resource => ({
     resource,
+    depth: resourceDepth(resource.id, byId),
     allocations: byResource[resource.id] ?? [],
     conflicts: conflicts.filter(c => c.resourceId === resource.id)
   }))

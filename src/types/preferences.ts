@@ -1,4 +1,6 @@
 // Preferences configuration types
+import { ProjectFileFormat } from '@/types'
+
 export interface GridPreferences {
   cellWidth: number
   cellHeight: number
@@ -18,10 +20,16 @@ export interface UIPreferences {
   panEnabled: boolean
 }
 
+export interface FilePreferences {
+  /** Format used by Save As and by the first save of a new project. */
+  defaultFormat: ProjectFileFormat
+}
+
 export interface Preferences {
   grid: GridPreferences
   animation: AnimationPreferences
   ui: UIPreferences
+  file: FilePreferences
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -40,5 +48,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
     crosshairEnabled: false,
     canvasTextDisplay: 'action',
     panEnabled: true
+  },
+  file: {
+    // JSON is the recommended default: plain text and the full project model.
+    defaultFormat: 'json'
   }
 }

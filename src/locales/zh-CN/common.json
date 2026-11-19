@@ -6,7 +6,8 @@
   "menu": {
     "file": {
       "title": "文件",
-      "import": "导入CSV",
+      "open": "打开 JSON 项目 (Ctrl+O)",
+      "import": "导入 CSV / Excel (Ctrl+I)",
       "save": "保存",
       "saveAs": "另存为",
       "export": {
@@ -74,6 +75,7 @@
   "toolbar": {
     "importCSV": "导入CSV",
     "importSuccess": "已导入 {{count}} 条数据",
+    "openProject": "打开 JSON 项目 (Ctrl+O)",
     "importFile": "导入 CSV / Excel (Ctrl+I)"
   },
   "timeline": {
@@ -120,7 +122,9 @@
     "importFailed": "导入失败",
     "exportFailed": "导出失败",
     "unknown": "未知错误",
-    "unsupportedFile": "请选择 .csv 或 .xlsx 文件"
+    "unsupportedFile": "请选择 .csv 或 .xlsx 文件",
+    "unsupportedProjectFile": "“打开”只支持 .json 项目文件；CSV / Excel 请使用“导入”。",
+    "unsupportedImportFile": "“导入”只支持 CSV / Excel；JSON 项目文件请使用“打开”。"
   },
   "settings": {
     "title": "设置",
@@ -136,6 +140,14 @@
       "title": "网格设置",
       "cellWidth": "单元格宽度",
       "cellHeight": "单元格高度"
+    },
+    "file": {
+      "title": "默认文件类型",
+      "defaultFormat": "保存 / 另存为默认格式",
+      "json": "JSON 项目文件（推荐）",
+      "excel": "Excel 工作簿 (.xlsx)",
+      "csv": "CSV 项目文件（含元数据列）",
+      "hint": "已关联的文件仍按原格式写回；CSV 的 __project_json 元数据列请勿删除。"
     },
     "animation": {
       "title": "动画设置",
@@ -422,6 +434,9 @@
     "includeHidden": "导出被隐藏（已折叠）的子动作行",
     "export": "导出 Excel",
     "import": "导入 Excel（回写甘特图）",
+    "importWithLayout": "导入 Excel（含布局回写）",
+    "openWorkbench": "打开 Excel 工作台",
+    "closeSave": "保存设置并关闭",
     "verify": "校验一致性",
     "verified": "已校验 {{count}} 行；图表与表格数据一致，无冲突。",
     "issues": "处不一致",
@@ -466,7 +481,21 @@
     "noResource": "（无资源，请先新建）",
     "needResource": "请先添加一个资源",
     "invalidNumber": "偏移与时长必须是数字",
-    "zeroDuration": "占用时长必须大于 0（且在动作时长内）"
+    "zeroDuration": "占用时长必须大于 0（且在动作时长内）",
+    "slotIndex": "槽位索引",
+    "addSlot": "添加子槽位",
+    "rotary": "旋转盘",
+    "slots": "槽位数",
+    "step": "每周期步进",
+    "startSlotLabel": "起始槽",
+    "rotaryLane": "旋转盘：每周期选中一个子槽位",
+    "mapResource": "映射资源（物理模块 → 抽象资源）",
+    "noMapping": "（不映射 · 不自动占用）",
+    "mapHint": "映射后，本机构下所有动作的执行窗口会自动占用该资源（仅派生，不写入占用表）。",
+    "targetMode": "占用目标",
+    "fixedSlot": "该资源本身",
+    "activeSlot": "当前选中槽位",
+    "activeSlotHint": "按动作所属周期解析到当前选中槽位"
   },
   "cycle": {
     "title": "固定周期设置",
@@ -488,5 +517,9 @@
     "ok": "已保存",
     "failed": "保存失败",
     "empty": "暂无数据可保存"
+  },
+  "json": {
+    "importOk": "JSON 项目已导入",
+    "importFailed": "JSON 导入失败"
   }
 }

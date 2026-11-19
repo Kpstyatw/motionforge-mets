@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
-  openFile: () => ipcRenderer.invoke('dialog:openFile'),
+  openFile: (kind?: 'project' | 'data') => ipcRenderer.invoke('dialog:openFile', kind),
   saveFile: (options: any) => ipcRenderer.invoke('dialog:saveFile', options),
   
   // Platform information
@@ -51,7 +51,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 declare global {
   interface Window {
     electronAPI: {
-      openFile: () => Promise<Electron.OpenDialogReturnValue>
+      openFile: (kind?: 'project' | 'data') => Promise<Electron.OpenDialogReturnValue>
       saveFile: (options: any) => Promise<Electron.SaveDialogReturnValue>
       platform: NodeJS.Platform
       readFile: (filePath: string) => Promise<{ success: boolean; data?: string; error?: string }>

@@ -201,6 +201,43 @@ const allocations: ResourceAllocation[] = [
 // (S08 [0,1200) vs S07/S dock [2600,4500): no overlap.)
 
 // ---------------------------------------------------------------------------
+// Physical-module → abstract-resource mapping, rotary disc and active slots.
+// A mechanism bound to a resource auto-claims it during its actions' windows;
+// the 温育盘 is a rotary parent whose 8 holes are stable child slots.
+// ---------------------------------------------------------------------------
+const mechanismBindings: Record<string, string> = {
+  'MECH-SAMPLE': 'RES-SAMPLE-NEEDLE',
+  'MECH-GRIPPER': 'RES-TUBE-GRIPPER',
+  'MECH-REAGENT1': 'RES-REAGENT-NEEDLE-1',
+  'MECH-REAGENT2': 'RES-REAGENT-NEEDLE-2',
+  'MECH-INCUBATOR': 'RES-INCUBATOR',
+  'MECH-MAGSEP': 'RES-MAG-SEP',
+  'MECH-PMT': 'RES-PMT',
+  'MECH-SUBSTRATE': 'RES-SUBSTRATE-NEEDLE'
+}
+modules.forEach(m => {
+  if (mechanismBindings[m.id]) m.resourceId = mechanismBindings[m.id]
+})
+const disc = resources.find(r => r.id === 'RES-INCUBATOR')!
+disc.motion = { type: 'rotary', slots: 8, stepPerCycle: 1, startSlot: 0, stationOffset: 0 }
+for (let i = 0; i < 8; i++) {
+  resources.push({
+    id: `RES-INCUBATOR-H${i + 1}`,
+    name: `温育盘孔位 ${i + 1}`,
+    type: 'slot',
+    parentId: 'RES-INCUBATOR',
+    slotIndex: i,
+    color: disc.color
+  })
+}
+// Demonstration: claim whichever hole the disc has rotated to this cycle.
+allocations.push({
+  id: 'ALLOC-ACTIVE-SLOT', taskId: 'S20', resourceId: 'RES-INCUBATOR',
+  slotMode: 'activeSlot', offsetMs: 0, durationMs: 200,
+  notes: '演示：当前周期选中的温育孔位'
+})
+
+// ---------------------------------------------------------------------------
 // Build the project, run the real scheduler, export with the real exporter.
 // ---------------------------------------------------------------------------
 const now = new Date('2026-11-17T10:00:00.000Z')

@@ -6,6 +6,7 @@
   "menu": {
     "file": {
       "title": "ファイル",
+      "new": "新規プロジェクト (Ctrl+N)",
       "open": "JSON プロジェクトを開く (Ctrl+O)",
       "import": "CSV / Excel をインポート (Ctrl+I)",
       "save": "保存",
@@ -76,7 +77,16 @@
     "importCSV": "CSVをインポート",
     "importSuccess": "{{count}} 件のデータをインポートしました",
     "openProject": "JSON プロジェクトを開く (Ctrl+O)",
-    "importFile": "CSV / Excel を読み込む (Ctrl+I)"
+    "importFile": "CSV / Excel を読み込む (Ctrl+I)",
+    "newProject": "新規プロジェクト (Ctrl+N)"
+  },
+  "newProject": {
+    "unsavedTitle": "現在のプロジェクトは未保存です",
+    "unsavedDescription": "新規プロジェクトを作成すると現在の編集内容が消えます。先に保存しますか？",
+    "saveAndNew": "保存して新規作成",
+    "discardAndNew": "保存せずに新規作成",
+    "created": "新規プロジェクトを作成しました",
+    "createdDescription": "新しいプロジェクトの編集を開始できます。"
   },
   "timeline": {
     "play": "再生",
@@ -479,7 +489,8 @@
     "selectResource": "リソース",
     "newResource": "新規リソース",
     "noResource": "（リソースなし。先に作成してください）",
-    "needResource": "先にリソースを追加してください",
+    "selectPlaceholder": "（リソースを選択）",
+    "needResource": "先にリソースを選択または作成してください",
     "invalidNumber": "オフセットと時間は数値で入力",
     "zeroDuration": "占有時間は 0 より大きく（動作時間内）",
     "slotIndex": "スロット番号",

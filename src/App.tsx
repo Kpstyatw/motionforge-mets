@@ -4,13 +4,14 @@ import { Toaster } from '@/components/ui/toaster'
 import { LanguageSelector } from '@/components/LanguageSelector'
 import { useCSVImport } from '@/hooks/useCSVImport'
 import { useSaveProject } from '@/hooks/useSaveProject'
+import { useNewProject } from '@/hooks/useNewProject'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { FRAME_STEP_MS, useAnimationStore } from '@/stores/useAnimationStore'
 import { useHistoryStore } from '@/stores/useHistoryStore'
 import { GridCanvas } from '@/components/Canvas/GridCanvas'
 import { ParameterTable } from '@/components/ParameterTable'
 import { FaPlay, FaPause, FaStop, FaRedo, FaCog, FaDownload, FaSave } from 'react-icons/fa'
-import { ZoomIn, ZoomOut, Maximize, LocateFixed, FileUp, FolderOpen, Loader2, Clock3, Table2, LayoutGrid, GanttChartSquare } from 'lucide-react'
+import { ZoomIn, ZoomOut, Maximize, LocateFixed, FilePlus, FileUp, FolderOpen, Loader2, Clock3, Table2, LayoutGrid, GanttChartSquare } from 'lucide-react'
 import { useUIStore, MAX_ZOOM, MIN_ZOOM } from '@/stores/useUIStore'
 import { computeContentSize } from '@/lib/canvasRenderer'
 import { PreferencesDialog } from '@/components/PreferencesDialog'
@@ -34,6 +35,7 @@ import { ExcelDialog } from '@/components/ExcelDialog'
 import { AddNodeDialog } from '@/components/AddNodeDialog'
 import { ResourceManagerDialog } from '@/components/ResourceManagerDialog'
 import { ResourceAllocationDialog } from '@/components/ResourceAllocationDialog'
+import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { IS_ONLINE, ONLINE_DISABLED_COMMANDS } from '@/lib/platform'
 import { readSharedCsv } from '@/lib/shareLink'
 import {
@@ -47,7 +49,7 @@ import {
 function App() {
   const { t } = useTranslation()
   const { handleOpen, handleImport, importCSVText, isImporting } = useCSVImport()
-  const { save: saveProject, saveAs: saveProjectAs } = useSaveProject()
+  const { save: saveProject, saveAs: saveProjectAs, isSaving } = useSaveProject()
   // Online edition: opened from a share link (shows the footer prompt).
   const [sharedMode, setSharedMode] = useState(false)
   const { project, createNewProject, updateModules } = useProjectStore()
@@ -92,6 +94,19 @@ function App() {
   const openAddChild = (parentId: string | null) => setAddNode({ open: true, parentId })
   const openEditor = (id: string) => { setSelectedTask(id); setEditorTaskId(id) }
   const openAllocations = (id: string) => { setSelectedTask(id); setAllocationTaskId(id) }
+
+  const {
+    requestNewProject, confirmOpen: newProjectConfirmOpen,
+    closeConfirm: closeNewProjectConfirm, saveAndNew, discardAndNew
+  } = useNewProject({
+    save: saveProject,
+    isSaving,
+    onResetEditors: () => {
+      setEditorTaskId(null)
+      setAllocationTaskId(null)
+      setAddNode({ open: false, parentId: null })
+    }
+  })
 
   // Speed control functions
   const speedUp = () => {
@@ -229,6 +244,7 @@ function App() {
   // table serves both the native menu (over IPC) and the key handler, so the
   // menu, the keys and the help dialog cannot disagree.
   const commands: Record<string, () => void> = {
+    'new-project': requestNewProject,
     'open-project': () => { if (!isImporting) handleOpen() },
     'import-csv': () => { if (!isImporting) handleImport() },
     save: () => saveProject(),
@@ -349,6 +365,14 @@ function App() {
           <div className="toolbar-area border-b px-4 py-2" onDoubleClick={handleToolbarDoubleClick}>
             <div className="flex flex-wrap items-center justify-between gap-y-2 no-drag">
               <div className="flex items-center gap-4">
+                <TooltipButton
+                  className="p-2 text-sm border rounded hover:bg-accent disabled:opacity-50 transition-colors"
+                  onClick={requestNewProject}
+                  tooltip={t('toolbar.newProject', { defaultValue: '新建项目 (Ctrl+N)' })}
+                  aria-label={t('toolbar.newProject', { defaultValue: '新建项目' })}
+                >
+                  <FilePlus className="h-3.5 w-3.5" />
+                </TooltipButton>
                 <TooltipButton
                   className="p-2 text-sm border rounded hover:bg-accent disabled:opacity-50 transition-colors"
                   onClick={() => handleOpen()}
@@ -649,6 +673,13 @@ function App() {
           onCreated={id => openEditor(id)}
         />
       )}
+      <NewProjectDialog
+        open={newProjectConfirmOpen}
+        onClose={closeNewProjectConfirm}
+        onSaveAndNew={() => void saveAndNew()}
+        onDiscardAndNew={discardAndNew}
+        isSaving={isSaving}
+      />
       <AboutDialog 
         isOpen={aboutOpen} 
         onClose={() => setAboutOpen(false)} 

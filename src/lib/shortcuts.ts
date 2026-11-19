@@ -48,6 +48,14 @@ export interface ShortcutDef {
 export const SHORTCUTS: ShortcutDef[] = [
   // File
   {
+    command: 'new-project',
+    labelKey: 'menu.file.new',
+    category: 'file',
+    keys: 'Ctrl+N',
+    accelerator: 'CmdOrCtrl+N',
+    bindings: [{ key: 'n', ctrl: true }]
+  },
+  {
     command: 'open-project',
     labelKey: 'menu.file.open',
     category: 'file',

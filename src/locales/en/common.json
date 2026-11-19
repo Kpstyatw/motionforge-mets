@@ -6,6 +6,7 @@
   "menu": {
     "file": {
       "title": "File",
+      "new": "New Project (Ctrl+N)",
       "open": "Open JSON Project (Ctrl+O)",
       "import": "Import CSV / Excel (Ctrl+I)",
       "save": "Save",
@@ -76,7 +77,16 @@
     "importCSV": "Import CSV",
     "importSuccess": "Imported {{count}} rows",
     "openProject": "Open JSON Project (Ctrl+O)",
-    "importFile": "Import CSV / Excel (Ctrl+I)"
+    "importFile": "Import CSV / Excel (Ctrl+I)",
+    "newProject": "New Project (Ctrl+N)"
+  },
+  "newProject": {
+    "unsavedTitle": "Current project has unsaved changes",
+    "unsavedDescription": "Creating a new project clears the current edits. Save the current project first?",
+    "saveAndNew": "Save and create",
+    "discardAndNew": "Discard and create",
+    "created": "New project created",
+    "createdDescription": "You can start editing the new project now."
   },
   "timeline": {
     "play": "Play",
@@ -479,7 +489,8 @@
     "selectResource": "Resource",
     "newResource": "New resource",
     "noResource": "（no resources — create one first）",
-    "needResource": "Add a resource first",
+    "selectPlaceholder": "(Select a resource)",
+    "needResource": "Select or create a resource first",
     "invalidNumber": "Offset and duration must be numbers",
     "zeroDuration": "Duration must be > 0 (and within the action)",
     "slotIndex": "Slot index",

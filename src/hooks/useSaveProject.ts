@@ -20,12 +20,13 @@ export function useSaveProject() {
   const { schedule, expansion } = useCycleView()
   const [isSaving, setIsSaving] = useState(false)
 
-  const save = useCallback(async (forceSaveAs = false) => {
-    if (!project || isSaving) return
+  /** Returns true only when the project was actually written to disk. */
+  const save = useCallback(async (forceSaveAs = false): Promise<boolean> => {
+    if (!project || isSaving) return false
     // A brand-new empty project has nothing worth writing.
     if (!project.modules.length) {
       toast({ variant: 'destructive', title: t('save.empty', { defaultValue: '暂无数据可保存' }) })
-      return
+      return false
     }
     setIsSaving(true)
     try {
@@ -44,10 +45,10 @@ export function useSaveProject() {
         forceSaveAs,
         format
       })
-      if (result.canceled) return
+      if (result.canceled) return false
       if (!result.saved) {
         toast({ variant: 'destructive', title: t('save.failed', { defaultValue: '保存失败' }), description: result.error })
-        return
+        return false
       }
       if (result.path) {
         setSourceFile({ path: result.path, name: result.target, kind: result.format })
@@ -60,8 +61,10 @@ export function useSaveProject() {
         title: t('save.ok', { defaultValue: '已保存' }),
         description: result.warning ? `${result.target} · ${result.warning}` : result.target
       })
+      return true
     } catch (error) {
       toast({ variant: 'destructive', title: t('save.failed', { defaultValue: '保存失败' }), description: String(error) })
+      return false
     } finally {
       setIsSaving(false)
     }

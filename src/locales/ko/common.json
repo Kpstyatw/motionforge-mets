@@ -6,6 +6,7 @@
   "menu": {
     "file": {
       "title": "파일",
+      "new": "새 프로젝트 (Ctrl+N)",
       "open": "JSON 프로젝트 열기 (Ctrl+O)",
       "import": "CSV / Excel 가져오기 (Ctrl+I)",
       "save": "저장",
@@ -76,7 +77,16 @@
     "importCSV": "CSV 가져오기",
     "importSuccess": "{{count}}개 행을 가져왔습니다",
     "openProject": "JSON 프로젝트 열기 (Ctrl+O)",
-    "importFile": "CSV / Excel 가져오기 (Ctrl+I)"
+    "importFile": "CSV / Excel 가져오기 (Ctrl+I)",
+    "newProject": "새 프로젝트 (Ctrl+N)"
+  },
+  "newProject": {
+    "unsavedTitle": "현재 프로젝트에 저장되지 않은 변경 사항이 있습니다",
+    "unsavedDescription": "새 프로젝트를 만들면 현재 편집 내용이 지워집니다. 먼저 저장하시겠습니까?",
+    "saveAndNew": "저장 후 새로 만들기",
+    "discardAndNew": "저장하지 않고 새로 만들기",
+    "created": "새 프로젝트를 만들었습니다",
+    "createdDescription": "이제 새 프로젝트 편집을 시작할 수 있습니다."
   },
   "timeline": {
     "play": "재생",
@@ -479,7 +489,8 @@
     "selectResource": "리소스",
     "newResource": "새 리소스",
     "noResource": "(리소스 없음. 먼저 만드세요)",
-    "needResource": "리소스를 먼저 추가하세요",
+    "selectPlaceholder": "(리소스 선택)",
+    "needResource": "리소스를 선택하거나 먼저 만드세요",
     "invalidNumber": "오프셋과 지속 시간은 숫자여야 합니다",
     "zeroDuration": "점유 시간은 0보다 커야 하고 작업 시간 이내여야 합니다",
     "slotIndex": "슬롯 인덱스",

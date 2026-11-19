@@ -41,11 +41,13 @@ export const ResourceAllocationDialog: React.FC<Props> = ({ taskId, onClose }) =
   const resourceName = (id: string) => resources.find(r => r.id === id)?.name ?? id
 
   const submit = () => {
-    const resourceId = newResourceId || resources[0]?.id
-    if (!resourceId) {
-      setError(t('resource.needResource', { defaultValue: '请先添加一个资源' }))
+    // No silent fallback to the first resource: an unselected dropdown must
+    // stay empty, otherwise a click on "add" claims a resource the user never picked.
+    if (!newResourceId) {
+      setError(t('resource.needResource', { defaultValue: '请先选择或新建一个资源' }))
       return
     }
+    const resourceId = newResourceId
     const parsedOffset = Number(offset)
     const parsedDuration = Number(duration)
     if (!Number.isFinite(parsedOffset) || !Number.isFinite(parsedDuration)) {
@@ -59,6 +61,7 @@ export const ResourceAllocationDialog: React.FC<Props> = ({ taskId, onClose }) =
     }
     addAllocation({ taskId, resourceId, slotMode: newSlotMode, ...clamped })
     setError(null)
+    setNewResourceId('')
     setOffset('0')
     setDuration('0')
   }
@@ -133,8 +136,12 @@ export const ResourceAllocationDialog: React.FC<Props> = ({ taskId, onClose }) =
               <div className="col-span-3">
                 <label className={labelClass}>{t('resource.selectResource', { defaultValue: '资源' })}</label>
                 <div className="flex gap-2">
-                  <select className={inputClass} value={newResourceId} onChange={e => setNewResourceId(e.target.value)}>
-                    {resources.length === 0 && <option value="">{t('resource.noResource', { defaultValue: '（无资源，请先新建）' })}</option>}
+                  <select className={inputClass} value={newResourceId} onChange={e => { setNewResourceId(e.target.value); setError(null) }}>
+                    <option value="">
+                      {resources.length === 0
+                        ? t('resource.noResource', { defaultValue: '（无资源，请先新建）' })
+                        : t('resource.selectPlaceholder', { defaultValue: '（请选择资源）' })}
+                    </option>
                     {resources.map(r => <option key={r.id} value={r.id}>{r.name}{r.type ? ` · ${r.type}` : ''}</option>)}
                   </select>
                   <button onClick={() => setQuickAdding(v => !v)} className="px-2 border rounded hover:bg-accent whitespace-nowrap text-xs">

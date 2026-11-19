@@ -6,6 +6,7 @@
   "menu": {
     "file": {
       "title": "文件",
+      "new": "新建项目 (Ctrl+N)",
       "open": "打开 JSON 项目 (Ctrl+O)",
       "import": "导入 CSV / Excel (Ctrl+I)",
       "save": "保存",
@@ -76,7 +77,16 @@
     "importCSV": "导入CSV",
     "importSuccess": "已导入 {{count}} 条数据",
     "openProject": "打开 JSON 项目 (Ctrl+O)",
-    "importFile": "导入 CSV / Excel (Ctrl+I)"
+    "importFile": "导入 CSV / Excel (Ctrl+I)",
+    "newProject": "新建项目 (Ctrl+N)"
+  },
+  "newProject": {
+    "unsavedTitle": "当前项目尚未保存",
+    "unsavedDescription": "新建项目会清空当前编辑内容。是否先保存当前项目？",
+    "saveAndNew": "保存并新建",
+    "discardAndNew": "不保存并新建",
+    "created": "已新建项目",
+    "createdDescription": "现在可以开始编辑新项目了。"
   },
   "timeline": {
     "play": "播放",
@@ -479,7 +489,8 @@
     "selectResource": "资源",
     "newResource": "新建资源",
     "noResource": "（无资源，请先新建）",
-    "needResource": "请先添加一个资源",
+    "selectPlaceholder": "（请选择资源）",
+    "needResource": "请先选择或新建一个资源",
     "invalidNumber": "偏移与时长必须是数字",
     "zeroDuration": "占用时长必须大于 0（且在动作时长内）",
     "slotIndex": "槽位索引",

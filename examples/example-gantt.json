@@ -1,0 +1,227 @@
+{
+  "format": "cycleview-project",
+  "formatVersion": 1,
+  "exportedAt": "2026-11-19T06:50:25.035Z",
+  "project": {
+    "name": "Untitled Project",
+    "modules": [
+      {
+        "id": "c010562a-59cd-40c7-b1e0-514c875af773",
+        "code": "01",
+        "kind": "module",
+        "parentId": null,
+        "moduleName": "管库",
+        "actionDescription": "管库",
+        "color": "#3b82f6",
+        "startMs": 0,
+        "anchorMs": 0,
+        "durationMs": 2000,
+        "endMs": 2000,
+        "startMode": "auto",
+        "predecessors": [],
+        "startX": 0,
+        "calculatedStartX": 0,
+        "moveCount": 20,
+        "duration": 100,
+        "isSequentialAction": false
+      },
+      {
+        "id": "d7a9789b-8888-420b-9350-a271e8bc480a",
+        "code": "01.01",
+        "kind": "mechanism",
+        "parentId": "c010562a-59cd-40c7-b1e0-514c875af773",
+        "moduleName": "管库抓手",
+        "actionDescription": "管库抓手",
+        "stage": "管库",
+        "color": "#3b82f6",
+        "startMs": 1000,
+        "anchorMs": 0,
+        "durationMs": 1000,
+        "endMs": 2000,
+        "startMode": "auto",
+        "predecessors": [],
+        "startX": 10,
+        "calculatedStartX": 10,
+        "moveCount": 10,
+        "duration": 100,
+        "isSequentialAction": false
+      },
+      {
+        "id": "c6f5f92a-4f20-4203-9e39-6f84ea127a11",
+        "code": "01.01.01",
+        "kind": "action",
+        "parentId": "d7a9789b-8888-420b-9350-a271e8bc480a",
+        "moduleName": "管库抓手",
+        "actionDescription": "抓管到处理环",
+        "stage": "管库",
+        "color": "#3b82f6",
+        "startMs": 1000,
+        "anchorMs": 0,
+        "durationMs": 1000,
+        "endMs": 2000,
+        "startMode": "auto",
+        "predecessors": [
+          {
+            "id": "17840555-1cdd-47e7-b6e5-e0465635f944",
+            "fromId": "e678205f-7cf6-454b-9e28-2a0916e328f6",
+            "type": "FS",
+            "lagMs": 0
+          }
+        ],
+        "startX": 10,
+        "calculatedStartX": 10,
+        "moveCount": 10,
+        "duration": 100,
+        "isSequentialAction": true
+      },
+      {
+        "id": "2834c505-0016-4673-9b77-b9e177340d48",
+        "code": "01.01.02",
+        "kind": "action",
+        "parentId": "d7a9789b-8888-420b-9350-a271e8bc480a",
+        "moduleName": "管库抓手",
+        "actionDescription": "抓管到稀释位",
+        "stage": "管库",
+        "color": "#3b82f6",
+        "startMs": 1000,
+        "anchorMs": 0,
+        "durationMs": 1000,
+        "endMs": 2000,
+        "startMode": "auto",
+        "predecessors": [
+          {
+            "id": "dab968c2-1867-4c6c-aca5-3ba7f8ad5f73",
+            "fromId": "e678205f-7cf6-454b-9e28-2a0916e328f6",
+            "type": "FS",
+            "lagMs": 0
+          }
+        ],
+        "startX": 0,
+        "calculatedStartX": 10,
+        "moveCount": 10,
+        "duration": 100,
+        "isSequentialAction": true
+      },
+      {
+        "id": "f2caa991-05f1-49ab-8d22-6525db2cc0c4",
+        "code": "01.02",
+        "kind": "mechanism",
+        "parentId": "c010562a-59cd-40c7-b1e0-514c875af773",
+        "moduleName": "理杯盘",
+        "actionDescription": "理杯盘",
+        "stage": "管库",
+        "color": "#3b82f6",
+        "startMs": 0,
+        "anchorMs": 0,
+        "durationMs": 1000,
+        "endMs": 1000,
+        "startMode": "auto",
+        "predecessors": [],
+        "startX": 0,
+        "calculatedStartX": 0,
+        "moveCount": 10,
+        "duration": 100,
+        "isSequentialAction": false
+      },
+      {
+        "id": "e678205f-7cf6-454b-9e28-2a0916e328f6",
+        "code": "01.02.01",
+        "kind": "action",
+        "parentId": "f2caa991-05f1-49ab-8d22-6525db2cc0c4",
+        "moduleName": "理杯盘",
+        "actionDescription": "旋转",
+        "stage": "管库",
+        "color": "#3b82f6",
+        "startMs": 0,
+        "anchorMs": 0,
+        "durationMs": 1000,
+        "endMs": 1000,
+        "startMode": "auto",
+        "predecessors": [],
+        "startX": 0,
+        "calculatedStartX": 0,
+        "moveCount": 10,
+        "duration": 100,
+        "isSequentialAction": false
+      }
+    ],
+    "resources": [
+      {
+        "id": "8f4aca03-a261-43f1-b381-837dc93a8571",
+        "name": "管库抓手"
+      }
+    ],
+    "allocations": [
+      {
+        "id": "5b8b8966-817c-499f-9b66-e41cae844610",
+        "taskId": "2834c505-0016-4673-9b77-b9e177340d48",
+        "resourceId": "8f4aca03-a261-43f1-b381-837dc93a8571",
+        "offsetMs": 0,
+        "durationMs": 1000,
+        "slotMode": "fixed"
+      },
+      {
+        "id": "3fed9fef-0cc2-4733-8a52-1c38f3eb8131",
+        "taskId": "c6f5f92a-4f20-4203-9e39-6f84ea127a11",
+        "resourceId": "8f4aca03-a261-43f1-b381-837dc93a8571",
+        "offsetMs": 0,
+        "durationMs": 1000,
+        "slotMode": "fixed"
+      }
+    ],
+    "canvasConfig": {
+      "cellWidth": 20,
+      "cellHeight": 30,
+      "showGrid": true,
+      "showRuler": true,
+      "gridColor": "#e5e5e5",
+      "backgroundColor": "#ffffff",
+      "defaultFillColor": "#3b82f6"
+    },
+    "createdAt": "2026-11-19T02:15:59.204Z",
+    "updatedAt": "2026-11-19T06:50:18.722Z",
+    "version": "2.0.0",
+    "schemaVersion": 2,
+    "timeConfig": {
+      "scaleMs": 100,
+      "precisionMs": 1,
+      "displayUnit": "ms"
+    },
+    "cycleConfig": {
+      "enabled": false,
+      "cycleMs": 30000,
+      "repeats": 3
+    },
+    "excelLayout": {
+      "rowHeight": 22,
+      "headerHeight": 30,
+      "columnWidths": {
+        "code": 14,
+        "id": 12,
+        "level": 8,
+        "module": 20,
+        "action": 24,
+        "stage": 10,
+        "startMs": 14,
+        "anchorMs": 16,
+        "durationMs": 14,
+        "endMs": 14,
+        "scale": 12,
+        "mode": 12,
+        "predecessors": 34,
+        "color": 12
+      },
+      "matrixCellWidth": 3.5,
+      "matrixRowHeight": 18,
+      "matrixStepMs": 100,
+      "matrixLabelEvery": 10,
+      "fontSize": 10
+    },
+    "ganttConfig": {
+      "pxPerMs": 0.35,
+      "rowHeight": 34,
+      "showDependencies": true,
+      "showSummaries": true
+    }
+  }
+}

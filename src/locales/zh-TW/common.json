@@ -6,6 +6,7 @@
   "menu": {
     "file": {
       "title": "檔案",
+      "new": "新增專案 (Ctrl+N)",
       "open": "開啟 JSON 專案 (Ctrl+O)",
       "import": "匯入 CSV / Excel (Ctrl+I)",
       "save": "儲存",
@@ -76,7 +77,16 @@
     "importCSV": "匯入CSV",
     "importSuccess": "已匯入 {{count}} 筆資料",
     "openProject": "開啟 JSON 專案 (Ctrl+O)",
-    "importFile": "匯入 CSV / Excel (Ctrl+I)"
+    "importFile": "匯入 CSV / Excel (Ctrl+I)",
+    "newProject": "新增專案 (Ctrl+N)"
+  },
+  "newProject": {
+    "unsavedTitle": "目前專案尚未儲存",
+    "unsavedDescription": "新增專案會清空目前的編輯內容。是否先儲存目前專案？",
+    "saveAndNew": "儲存並新增",
+    "discardAndNew": "不儲存並新增",
+    "created": "已新增專案",
+    "createdDescription": "現在可以開始編輯新專案了。"
   },
   "timeline": {
     "play": "播放",
@@ -479,7 +489,8 @@
     "selectResource": "資源",
     "newResource": "新建資源",
     "noResource": "（無資源，請先新建）",
-    "needResource": "請先新增一個資源",
+    "selectPlaceholder": "（請選擇資源）",
+    "needResource": "請先選擇或新增一個資源",
     "invalidNumber": "偏移與時長必須是數字",
     "zeroDuration": "佔用時長必須大於 0（且在動作時長內）",
     "slotIndex": "槽位索引",

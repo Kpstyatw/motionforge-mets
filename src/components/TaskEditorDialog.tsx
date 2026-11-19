@@ -8,6 +8,7 @@ import { normalizeTimeConfig, parseTimeInput, quantize, describeDuration } from 
 import { NameIssue, translateNameIssue } from '@/lib/nameValidation'
 import { DependencyType, TaskKind } from '@/types'
 import { toast } from '@/components/ui/use-toast'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Plus, Trash2, Link2, GitBranch, Boxes } from 'lucide-react'
 
 /** Editor for one action / sub-action (or a summary node). */
@@ -58,6 +59,7 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
   const [durationText, setDurationText] = useState('0')
   const [endText, setEndText] = useState('0')
   const [newPredId, setNewPredId] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   useEffect(() => {
     if (!task) return
@@ -132,8 +134,10 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
     else setNewPredId('')
   }
 
-  const handleDelete = () => {
-    if (!window.confirm(t('gantt.confirmDelete', { defaultValue: '删除该任务及其所有子动作、相关依赖？' }))) return
+  const handleDelete = () => setConfirmOpen(true)
+
+  const doDelete = () => {
+    setConfirmOpen(false)
     deleteTask(task.id)
     setSelectedTask(null)
     onClose()
@@ -402,6 +406,12 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
           </button>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmOpen}
+        message={t('gantt.confirmDelete', { defaultValue: '删除该任务及其所有子动作、相关依赖？' })}
+        onConfirm={doDelete}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   )
 }

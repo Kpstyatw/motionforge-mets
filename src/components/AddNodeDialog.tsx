@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -42,6 +42,7 @@ export const AddNodeDialog: React.FC<AddNodeDialogProps> = ({ parentId, onClose,
   const [name, setName] = useState('')
   const [durationMs, setDurationMs] = useState(String(config.scaleMs * 10))
   const [startMs, setStartMs] = useState('')
+  const nameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setKind(defaultKind())
@@ -49,6 +50,16 @@ export const AddNodeDialog: React.FC<AddNodeDialogProps> = ({ parentId, onClose,
     setDurationMs(String(config.scaleMs * 10))
     setStartMs(parent ? String(parent.startMs) : '0')
   }, [parentId, parent?.kind, config.scaleMs])
+
+  // Focus synchronously on mount. React's `autoFocus` can be delayed when the
+  // renderer composes a full-screen translucent overlay on a slow/eGPU-less
+  // display, which reads as "the field is greyed out for a second". Taking
+  // focus in a layout effect guarantees the caret is in the field the moment
+  // the dialog paints.
+  useLayoutEffect(() => {
+    nameRef.current?.focus()
+    nameRef.current?.select()
+  }, [])
 
   const isSummary = kind === 'module' || kind === 'mechanism'
   const submit = () => {
@@ -110,7 +121,7 @@ export const AddNodeDialog: React.FC<AddNodeDialogProps> = ({ parentId, onClose,
           </div>
           <div>
             <label className={labelClass}>{t('gantt.name', { defaultValue: '名称' })}</label>
-            <input className={inputClass} value={name} onChange={e => setName(e.target.value)} autoFocus
+            <input ref={nameRef} className={inputClass} value={name} onChange={e => setName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && submit()} />
           </div>
           {!isSummary && (

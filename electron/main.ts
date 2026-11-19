@@ -61,6 +61,25 @@ function closeSplash() {
   splashWindow = null
 }
 
+/**
+ * Make sure keyboard input actually reaches the page, not just the OS window.
+ *
+ * On Windows a BrowserWindow can be `isFocused() === true` while its
+ * webContents has no keyboard focus (common after an always-on-top splash or a
+ * native file dialog closes). The visible symptom: typing does nothing until
+ * the user switches to another app and back. Explicitly focusing the
+ * webContents — and its document — closes that gap.
+ */
+function focusRenderer(win: BrowserWindow | null) {
+  if (!win || win.isDestroyed()) return
+  if (!win.isFocused()) win.focus()
+  try {
+    if (!win.webContents.isDestroyed()) win.webContents.focus()
+  } catch {
+    /* window may be closing */
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -88,9 +107,14 @@ function createWindow() {
     const held = splashShownAt ? Date.now() - splashShownAt : SPLASH_MIN_MS
     const wait = Math.max(0, SPLASH_MIN_MS - held)
     setTimeout(() => {
-      closeSplash()
+      // Show AND activate the real window first, then tear down the always-on-top
+      // splash. Closing an alwaysOnTop window last can leave the OS thinking the
+      // (now gone) splash still owns activation, so the main window is visible
+      // but keyboard events never reach the renderer until the user alt-tabs.
       mainWindow?.show()
       mainWindow?.focus()
+      focusRenderer(mainWindow)
+      closeSplash()
     }, wait)
   })
 
@@ -118,12 +142,23 @@ function createWindow() {
     mainWindow.loadFile(join(__dirname, '../dist/index.html'))
   }
 
+  // Final backstop: once the document is ready, make sure the renderer owns
+  // keyboard focus. On some Windows sessions the show()/focus() sequence above
+  // runs before the WebContents is ready to accept input, so it is silently
+  // dropped. Re-asserting here (and shortly after) removes the need to alt-tab.
+  mainWindow.webContents.once('did-finish-load', () => {
+    focusRenderer(mainWindow)
+    setTimeout(() => focusRenderer(mainWindow), 300)
+  })
+
   // Set up menu
   applyMenu()
 
-  // Handle focus events to prevent dialog issues
+  // Whenever the OS gives this window focus, hand keyboard focus to the page
+  // as well. This makes alt-tab / taskbar-click reliably restore typing, and
+  // covers the case where the window looked focused but the renderer had none.
   mainWindow.on('focus', () => {
-    console.log('Main window focused')
+    focusRenderer(mainWindow)
   })
 
   mainWindow.on('blur', () => {
@@ -146,9 +181,10 @@ app.whenReady().then(() => {
     }
   })
 
-  // Handle app focus events
-  app.on('browser-window-focus', () => {
-    console.log('App focused')
+  // Handle app focus events — belt-and-braces: any window gaining focus hands
+  // keyboard focus to its renderer.
+  app.on('browser-window-focus', (_event, win) => {
+    focusRenderer(win)
   })
 
   app.on('browser-window-blur', () => {
@@ -201,7 +237,10 @@ ipcMain.handle('dialog:openFile', async (_event, kind?: 'project' | 'data') => {
       properties: ['openFile'],
       filters: OPEN_FILE_FILTERS[kind ?? 'all']
     })
-    
+
+    // A native dialog can leave the renderer without keyboard focus even though
+    // the parent window is focused; restore it so the UI is immediately usable.
+    focusRenderer(mainWindow)
     return result
   } catch (error) {
     console.error('Error opening file dialog:', error)
@@ -222,6 +261,7 @@ ipcMain.handle('dialog:saveFile', async (_, options: any) => {
     }
     
     const result = await dialog.showSaveDialog(mainWindow, options)
+    focusRenderer(mainWindow)
     return result
   } catch (error) {
     console.error('Error opening save dialog:', error)
@@ -254,6 +294,7 @@ ipcMain.handle('pdf:export', async (_, payload: {
     defaultPath: payload.fileName,
     filters: [{ name: 'PDF', extensions: ['pdf'] }]
   })
+  focusRenderer(mainWindow)
   if (target.canceled || !target.filePath) return { success: false, canceled: true }
 
   // Unique temp name so two exports in flight cannot clobber each other.
@@ -289,6 +330,7 @@ ipcMain.handle('pdf:export', async (_, payload: {
   } finally {
     if (printWindow && !printWindow.isDestroyed()) printWindow.destroy()
     await unlink(tempPath).catch(() => {})
+    focusRenderer(mainWindow)
   }
 })
 

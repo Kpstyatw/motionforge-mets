@@ -14,6 +14,7 @@ import {
   VideoExportAbortedError
 } from '@/services/videoExport'
 import { RenderConfig } from '@/lib/canvasRenderer'
+import { toast } from '@/components/ui/use-toast'
 import {
   FaDownload,
   FaFilePdf,
@@ -84,7 +85,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onO
 
   const handleExportCsv = async () => {
     if (!project || !project.modules.length) {
-      alert(t('export.noData'))
+      toast({ variant: 'destructive', title: t('export.noData', { defaultValue: '没有可导出的数据' }) })
       return
     }
 
@@ -94,7 +95,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onO
       onClose()
     } catch (error) {
       console.error('Export failed:', error)
-      alert(t('error.exportFailed') + ': ' + (error as Error).message)
+      toast({ variant: 'destructive', title: t('error.exportFailed', { defaultValue: '导出失败' }), description: (error as Error).message })
     } finally {
       setIsExporting(false)
     }
@@ -102,11 +103,11 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onO
 
   const handleExportPdf = async () => {
     if (!project || !project.modules.length) {
-      alert(t('export.noData'))
+      toast({ variant: 'destructive', title: t('export.noData', { defaultValue: '没有可导出的数据' }) })
       return
     }
     if (!window.electronAPI?.exportPdf) {
-      alert(t('export.pdf.unsupported'))
+      toast({ variant: 'destructive', title: t('export.pdf.unsupported', { defaultValue: '当前环境不支持导出 PDF' }) })
       return
     }
 
@@ -142,7 +143,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onO
       onClose()
     } catch (error) {
       console.error('PDF export failed:', error)
-      alert(t('error.exportFailed') + ': ' + (error as Error).message)
+      toast({ variant: 'destructive', title: t('error.exportFailed', { defaultValue: '导出失败' }), description: (error as Error).message })
     } finally {
       setIsExporting(false)
     }
@@ -150,7 +151,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onO
 
   const handleExportVideo = async () => {
     if (!project || !project.modules.length) {
-      alert(t('export.noData'))
+      toast({ variant: 'destructive', title: t('export.noData', { defaultValue: '没有可导出的数据' }) })
       return
     }
 
@@ -176,7 +177,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onO
     } catch (error) {
       if (!(error instanceof VideoExportAbortedError)) {
         console.error('MP4 export failed:', error)
-        alert(t('error.exportFailed') + ': ' + (error as Error).message)
+        toast({ variant: 'destructive', title: t('error.exportFailed', { defaultValue: '导出失败' }), description: (error as Error).message })
       }
     } finally {
       abortRef.current = null

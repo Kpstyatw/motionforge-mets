@@ -1,6 +1,6 @@
 {
   "name": "dynmech-cycleview",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "DYNMECH CycleView - a free cross-platform desktop tool for visualising and analysing equipment motion timing (cycle time)",
   "main": "dist-electron/main.js",
   "scripts": {

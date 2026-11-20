@@ -432,7 +432,10 @@
     "mechanismConflictHint": "橘色為機構並發衝突：同一機構在同一時間執行多個動作（僅提示，不自動改時序）。點擊可跳到對應動作。",
     "subRelativeHint": "子動作的開始/結束為相對父動作的偏移 (ms)；父動作移動時自動跟隨。",
     "startOffset": "開始偏移 (ms)",
-    "endOffset": "結束偏移 (ms)"
+    "endOffset": "結束偏移 (ms)",
+    "endOffsetReadonly": "由開始偏移 + 持續時長自動得出，無需單獨填寫",
+    "childDrivenHint": "該動作有子動作：開始/結束由所有子動作的最早開始與最晚結束自動彙總，不能直接修改。編輯子動作時間即可更新本動作。",
+    "absoluteHint": "使用絕對時刻 (ms)；若有子動作，其時間將由子動作自動彙總。"
   },
   "timeScale": {
     "title": "時間刻度與精度",

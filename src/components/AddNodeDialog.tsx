@@ -44,12 +44,19 @@ export const AddNodeDialog: React.FC<AddNodeDialogProps> = ({ parentId, onClose,
   const [startMs, setStartMs] = useState('')
   const nameRef = useRef<HTMLInputElement>(null)
 
+  // Child-driven model: every action/sub-action is authored on absolute time.
+  // A new child starts where its parent currently ends, so it does not overlap
+  // existing siblings; the Add dialog and the Task editor show the same clock.
+  const defaultStart = (_k: TaskKind): string => parent ? String(parent.endMs) : '0'
+
   useEffect(() => {
-    setKind(defaultKind())
+    const k = defaultKind()
+    setKind(k)
     setName('')
     setDurationMs(String(config.scaleMs * 10))
-    setStartMs(parent ? String(parent.startMs) : '0')
-  }, [parentId, parent?.kind, config.scaleMs])
+    setStartMs(defaultStart(k))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parentId, parent?.kind, parent?.startMs, config.scaleMs])
 
   // Focus synchronously on mount. React's `autoFocus` can be delayed when the
   // renderer composes a full-screen translucent overlay on a slow/eGPU-less
@@ -72,6 +79,7 @@ export const AddNodeDialog: React.FC<AddNodeDialogProps> = ({ parentId, onClose,
         return
       }
     }
+    const numericStart = Math.max(0, Number(startMs) || 0)
     const id = addAction({
       parentId,
       kind,
@@ -79,7 +87,8 @@ export const AddNodeDialog: React.FC<AddNodeDialogProps> = ({ parentId, onClose,
       // the second "新模块" / "新机构" in the same project.
       actionDescription: trimmed || undefined,
       durationMs: isSummary ? 0 : Math.max(0, Number(durationMs) || config.scaleMs * 10),
-      startMs: Math.max(0, Number(startMs) || 0)
+      // All timed nodes use absolute ms in the child-driven model.
+      startMs: numericStart
     })
     if (!id) {
       toast({ variant: 'destructive', title: t('nameIssue.title', { defaultValue: '名称重复，无法保存' }), description: t('nameIssue.blocked', { defaultValue: '请先修改重复或空名称后再保存' }) })
@@ -110,7 +119,11 @@ export const AddNodeDialog: React.FC<AddNodeDialogProps> = ({ parentId, onClose,
           </div>
           <div>
             <label className={labelClass}>{t('gantt.nodeKind', { defaultValue: '节点类型' })}</label>
-            <select className={inputClass} value={kind} onChange={e => setKind(e.target.value as TaskKind)}>
+            <select className={inputClass} value={kind} onChange={e => {
+              const k = e.target.value as TaskKind
+              setKind(k)
+              setStartMs(defaultStart(k))
+            }}>
               {KINDS.map(k => (
                 <option key={k} value={k}>{KIND_LABEL[k]}</option>
               ))}
@@ -135,6 +148,11 @@ export const AddNodeDialog: React.FC<AddNodeDialogProps> = ({ parentId, onClose,
                 <input className={inputClass} type="number" value={durationMs} onChange={e => setDurationMs(e.target.value)} />
               </div>
             </div>
+          )}
+          {!isSummary && (
+            <p className="text-[11px] text-muted-foreground">
+              {t('gantt.absoluteHint', { defaultValue: '使用绝对时刻 (ms)；若有子动作，其时间将由子动作自动汇总。' })}
+            </p>
           )}
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t">

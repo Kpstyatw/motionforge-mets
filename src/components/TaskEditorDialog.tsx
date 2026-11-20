@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MODULE_COLORS, useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
-import { collectDescendantIds, computeSchedule, wouldCreateCycle } from '@/lib/dependencyEngine'
+import { collectDescendantIds, computeSchedule, wouldCreateCycle, wouldCreateHierarchyConflict } from '@/lib/dependencyEngine'
 import { canBeParentOf } from '@/lib/hierarchy'
 import { normalizeTimeConfig, parseTimeInput, quantize, describeDuration } from '@/lib/timeScale'
 import { NameIssue, translateNameIssue } from '@/lib/nameValidation'
@@ -67,21 +67,22 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
     setStage(task.module.stage ?? '')
     setColor(task.module.color ?? MODULE_COLORS[0])
     setApplyColorToChildren(false)
-    // Sub-actions are authored relative to their parent action: show the
-    // offset + duration so the displayed "start" is exactly what gets stored.
-    if (task.kind === 'subaction') {
-      const offset = task.module.offsetFromParentMs ?? 0
-      setStartText(String(offset))
-      setEndText(String(offset + task.durationMs))
-    } else {
-      setStartText(String(task.startMs))
-      setEndText(String(task.endMs))
-    }
+    // Child-driven model: every timed node shows an absolute clock. Container
+    // nodes (those with children) display the sub-tree roll-up; the scheduler
+    // keeps those values in task.startMs/endMs already.
+    setStartText(String(task.startMs))
+    setEndText(String(task.endMs))
     setDurationText(String(task.durationMs))
     setNewPredId('')
-  }, [task?.id, task?.kind, task?.startMs, task?.durationMs, task?.endMs, task?.module.offsetFromParentMs, task?.module.actionDescription])
+  }, [task?.id, task?.kind, task?.startMs, task?.durationMs, task?.endMs, task?.module.actionDescription])
 
   if (!taskId || !task || !project) return null
+
+  // A container owns child nodes. Its time is rolled up from the sub-tree, so
+  // the time inputs are read-only; leaf actions/sub-actions keep absolute,
+  // editable time. Editing a child automatically refreshes the parent's range.
+  const isContainer = !task.isSummary && task.childIds.length > 0
+  const timeReadOnly = task.isSummary || isContainer
 
   /** Names are identities: never leave the field showing a value that was not stored. */
   const commitName = (text: string) => {
@@ -134,6 +135,7 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
     candidate.isLeaf &&
     candidate.id !== task.id &&
     !wouldCreateCycle(project.modules, task.id, candidate.id) &&
+    !wouldCreateHierarchyConflict(project.modules, task.id, candidate.id) &&
     !(task.module.predecessors ?? []).some(d => d.fromId === candidate.id)
   )
 
@@ -273,45 +275,45 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
                 {t('gantt.precision', { defaultValue: '精度' })} {config.precisionMs} ms · {describeDuration(task.durationMs)}
               </span>
             </div>
-            {task.kind === 'subaction' && (
+            {isContainer && (
               <p className="text-xs mb-2 text-blue-400">
-                {t('gantt.subRelativeHint', { defaultValue: '子动作的开始/结束为相对父动作的偏移 (ms)；父动作移动时自动跟随。' })}
+                {t('gantt.childDrivenHint', { defaultValue: '该动作有子动作：开始/结束由所有子动作的最早开始与最晚结束自动汇总，不能直接修改。编辑子动作时间即可更新本动作。' })}
               </p>
             )}
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className={labelClass}>
-                  {task.kind === 'subaction'
-                    ? t('gantt.startOffset', { defaultValue: '开始偏移 (ms)' })
-                    : t('gantt.start', { defaultValue: '开始 (ms)' })}
-                </label>
-                <input className={inputClass} value={startText} onChange={e => setStartText(e.target.value)}
-                  onBlur={() => commitTime('startMs', startText)}
-                  onKeyDown={e => e.key === 'Enter' && commitTime('startMs', startText)} />
+                <label className={labelClass}>{t('gantt.start', { defaultValue: '开始 (ms)' })}</label>
+                <input className={`${inputClass} ${timeReadOnly ? 'opacity-60' : ''}`}
+                  value={startText} readOnly={timeReadOnly}
+                  onChange={e => setStartText(e.target.value)}
+                  onBlur={() => !timeReadOnly && commitTime('startMs', startText)}
+                  onKeyDown={e => e.key === 'Enter' && !timeReadOnly && commitTime('startMs', startText)} />
               </div>
               <div>
                 <label className={labelClass}>{t('gantt.duration', { defaultValue: '持续时长 (ms)' })}</label>
-                <input className={inputClass} value={durationText} onChange={e => setDurationText(e.target.value)}
-                  onBlur={() => commitTime('durationMs', durationText)}
-                  onKeyDown={e => e.key === 'Enter' && commitTime('durationMs', durationText)} />
+                <input className={`${inputClass} ${timeReadOnly ? 'opacity-60' : ''}`}
+                  value={durationText} readOnly={timeReadOnly}
+                  onChange={e => setDurationText(e.target.value)}
+                  onBlur={() => !timeReadOnly && commitTime('durationMs', durationText)}
+                  onKeyDown={e => e.key === 'Enter' && !timeReadOnly && commitTime('durationMs', durationText)} />
               </div>
               <div>
-                <label className={labelClass}>
-                  {task.kind === 'subaction'
-                    ? t('gantt.endOffset', { defaultValue: '结束偏移 (ms)' })
-                    : t('gantt.end', { defaultValue: '结束 (ms)' })}
-                </label>
-                <input className={inputClass} value={endText} onChange={e => setEndText(e.target.value)}
-                  onBlur={() => commitTime('endMs', endText)}
-                  onKeyDown={e => e.key === 'Enter' && commitTime('endMs', endText)} />
+                <label className={labelClass}>{t('gantt.end', { defaultValue: '结束 (ms)' })}</label>
+                <input className={`${inputClass} ${timeReadOnly ? 'opacity-60' : ''}`}
+                  value={endText} readOnly={timeReadOnly}
+                  onChange={e => setEndText(e.target.value)}
+                  onBlur={() => !timeReadOnly && commitTime('endMs', endText)}
+                  onKeyDown={e => e.key === 'Enter' && !timeReadOnly && commitTime('endMs', endText)} />
               </div>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
               {t('gantt.timeHint', { defaultValue: '支持 1234、1234ms、1.234s、01:23.456；修改任一前置任务后，所有后置动作起始时间自动级联重算。' })}
             </p>
-            {task.isSummary ? (
+            {timeReadOnly ? (
               <p className="text-xs mt-2 text-blue-400">
-                {t('gantt.summaryHint', { defaultValue: '汇总行：起止时间由所有后代任务自动卷算，不可直接编辑。' })}
+                {isContainer
+                  ? t('gantt.childDrivenHint', { defaultValue: '该动作有子动作：起止时间由子动作自动汇总，不可直接编辑。' })
+                  : t('gantt.summaryHint', { defaultValue: '汇总行：起止时间由所有后代任务自动卷算，不可直接编辑。' })}
               </p>
             ) : (
               <div className="flex items-center gap-3 mt-3 text-xs">

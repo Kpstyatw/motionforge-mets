@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { ModuleData, TaskKind, TimeConfig } from '@/types'
 import {
   collectDescendantIds, computeSchedule, flattenTree, hierarchyPath,
-  renumberHierarchyCodes, syncLegacyFields, wouldCreateCycle
+  renumberHierarchyCodes, syncLegacyFields, wouldCreateCycle, wouldCreateHierarchyConflict
 } from './dependencyEngine'
 import { DEFAULT_TIME_CONFIG, normalizeTimeConfig, parseTimeInput, quantize } from './timeScale'
 import { computeTotalDurationMs } from './timingModel'
@@ -189,9 +189,9 @@ describe('hierarchy 模块 → 机构 → 动作 → 子动作 → ...', () => {
     const module = { ...task({ moduleName: '进样模块', actionDescription: '进样模块', durationMs: 0 }), id: 'M', kind: 'module' as TaskKind }
     const mechanism = { ...task({ moduleName: 'Feeder_1', actionDescription: 'Feeder_1', durationMs: 0, parentId: 'M' }), id: 'K', kind: 'mechanism' as TaskKind }
     const action = { ...task({ startMs: 100, durationMs: 400, parentId: 'K' }), id: 'A' }
-    const sub1 = { ...task({ startMs: 500, durationMs: 100, parentId: 'A' }), id: 'S1', kind: 'subaction' as TaskKind, offsetFromParentMs: 400 }
-    const sub2 = { ...task({ startMs: 600, durationMs: 50, parentId: 'S1' }), id: 'S2', kind: 'subaction' as TaskKind, offsetFromParentMs: 100 }
-    const sub3 = { ...task({ startMs: 650, durationMs: 25, parentId: 'S2' }), id: 'S3', kind: 'subaction' as TaskKind, offsetFromParentMs: 50 }
+    const sub1 = { ...task({ startMs: 500, durationMs: 100, parentId: 'A' }), id: 'S1', kind: 'subaction' as TaskKind }
+    const sub2 = { ...task({ startMs: 600, durationMs: 50, parentId: 'S1' }), id: 'S2', kind: 'subaction' as TaskKind }
+    const sub3 = { ...task({ startMs: 650, durationMs: 25, parentId: 'S2' }), id: 'S3', kind: 'subaction' as TaskKind }
     return resolve([module, mechanism, action, sub1, sub2, sub3])
   }
 
@@ -199,13 +199,15 @@ describe('hierarchy 模块 → 机构 → 动作 → 子动作 → ...', () => {
     const schedule = computeSchedule(buildTree(), CONFIG)
     expect(schedule.byId.M.isSummary).toBe(true)
     expect(schedule.byId.K.isSummary).toBe(true)
-    expect(schedule.byId.A.startMs).toBe(100)
-    expect(schedule.byId.S1.startMs).toBe(500)
-    expect(schedule.byId.S2.startMs).toBe(600)
+    // Nested chain S1→S2→S3: each container inherits the deepest leaf's window.
+    expect(schedule.byId.A.startMs).toBe(650)
+    expect(schedule.byId.A.endMs).toBe(675)
+    expect(schedule.byId.S1.startMs).toBe(650)
+    expect(schedule.byId.S2.startMs).toBe(650)
     expect(schedule.byId.S3.startMs).toBe(650)
-    expect(schedule.byId.M.rollupStartMs).toBe(100)
+    expect(schedule.byId.M.rollupStartMs).toBe(650)
     expect(schedule.byId.M.rollupEndMs).toBe(675)
-    expect(schedule.byId.K.rollupStartMs).toBe(100)
+    expect(schedule.byId.K.rollupStartMs).toBe(650)
     expect(schedule.byId.S3.depth).toBe(5) // 模块 → 机构 → 动作 → 子动作 → 子动作 → 子动作
     expect(hierarchyPath(schedule, 'S3')[0]).toBe('进样模块')
     expect(hierarchyPath(schedule, 'S3')[1]).toBe('Feeder_1')
@@ -272,79 +274,132 @@ describe('legacy mirror fields', () => {
   })
 })
 
-describe('parent/child time association', () => {
+describe('child-driven parent/child time association', () => {
   const fixture = () => [
     { ...task({ id: 'M', moduleName: '模块', durationMs: 0, parentId: null }), kind: 'module' as TaskKind },
     { ...task({ id: 'K', moduleName: '机构', durationMs: 0, parentId: 'M' }), kind: 'mechanism' as TaskKind },
     { ...task({ id: 'A', startMs: 1000, durationMs: 800, parentId: 'K' }) }
   ]
 
-  it('derives a sub-action start from the parent action start plus its offset', () => {
+  it('uses the child absolute time; the container rolls up to its bounds', () => {
     const [m, k, a] = fixture()
-    const sub = { ...task({ id: 'S', parentId: 'A', durationMs: 300 }), offsetFromParentMs: 200 }
+    const sub = task({ id: 'S', parentId: 'A', startMs: 1200, durationMs: 300 })
     const s = computeSchedule([m, k, a, sub], CONFIG)
-    expect(s.byId.S.startMs).toBe(1200) // 1000 + 200
+    expect(s.byId.S.startMs).toBe(1200)
     expect(s.byId.S.endMs).toBe(1500)
+    expect(s.byId.A.startMs).toBe(1200) // container = earliest child
+    expect(s.byId.A.endMs).toBe(1500)   // container = latest child end
   })
 
-  it('drags sub-actions along when the parent action moves (manual edit)', () => {
+  it('a leaf action with no children stays on its authored absolute time', () => {
+    const [m, k] = fixture()
+    const leaf = task({ id: 'L', parentId: 'K', startMs: 4300, durationMs: 250 })
+    const s = computeSchedule([m, k, leaf], CONFIG)
+    expect(s.byId.L.startMs).toBe(4300)
+    expect(s.byId.L.endMs).toBe(4550)
+    expect(s.byId.L.isLeaf).toBe(true)
+  })
+
+  it('keeps the container time independent of its own authored start', () => {
     const [m, k, a] = fixture()
-    const sub = { ...task({ id: 'S', parentId: 'A', durationMs: 300 }), offsetFromParentMs: 200 }
+    const sub = task({ id: 'S', parentId: 'A', startMs: 1200, durationMs: 300 })
     const moved = { ...a, startMs: 5000, anchorMs: 5000 }
     const s = computeSchedule([m, k, moved, sub], CONFIG)
-    expect(s.byId.S.startMs).toBe(5200)
+    expect(s.byId.A.startMs).toBe(1200) // authored 5000 ignored; child decides
+    expect(s.byId.S.startMs).toBe(1200)
   })
 
-  it('drags sub-actions along through a dependency cascade', () => {
+  it('shifts the whole sub-tree as one when the container predecessor requires it', () => {
     const [m, k] = fixture()
-    const trigger = { ...task({ id: 'T', startMs: 0, durationMs: 400, parentId: 'K' }) }
-    const dependent = {
-      ...task({ id: 'A', startMs: 1000, durationMs: 800, parentId: 'K', predecessors: [dep('T')] })
-    }
-    const sub = { ...task({ id: 'S', parentId: 'A', durationMs: 300 }), offsetFromParentMs: 200 }
-    const before = computeSchedule([m, k, trigger, dependent, sub], CONFIG)
-    expect(before.byId.S.startMs).toBe(600) // A starts at T end (400), S = 400 + 200
-    // Push the trigger later by 1000 → A cascades to 1400, S follows to 1600.
+    const trigger = task({ id: 'T', startMs: 0, durationMs: 400, parentId: 'K' })
+    const container = { ...task({ id: 'A', parentId: 'K', predecessors: [dep('T')] }) }
+    const s1 = task({ id: 'S1', parentId: 'A', startMs: 500, durationMs: 200 })
+    const s2 = task({ id: 'S2', parentId: 'A', startMs: 900, durationMs: 100 })
+    const before = computeSchedule([m, k, trigger, container, s1, s2], CONFIG)
+    // Sub-tree earliest = 500, predecessor ends 400 → already satisfied, no shift.
+    expect(before.byId.A.startMs).toBe(500)
+    expect(before.byId.S2.startMs).toBe(900)
+
     const movedTrigger = { ...trigger, startMs: 1000, anchorMs: 1000 }
-    const after = computeSchedule([m, k, movedTrigger, dependent, sub], CONFIG)
+    const after = computeSchedule([m, k, movedTrigger, container, s1, s2], CONFIG)
+    // Predecessor now ends 1400 → whole sub-tree shifts +900, preserving gaps.
     expect(after.byId.A.startMs).toBe(1400)
-    expect(after.byId.S.startMs).toBe(1600)
+    expect(after.byId.S1.startMs).toBe(1400)
+    expect(after.byId.S2.startMs).toBe(1800)
+    expect(after.byId.A.endMs).toBe(1900)
   })
 
-  it('grows the parent action to contain an overshooting sub-action even with predecessors', () => {
+  it('nested containers compose: outer shift carries the inner sub-tree', () => {
     const [m, k] = fixture()
-    const trigger = { ...task({ id: 'T', startMs: 0, durationMs: 200, parentId: 'K' }) }
-    const dependent = {
-      ...task({ id: 'A', startMs: 0, durationMs: 100, parentId: 'K', predecessors: [dep('T')] })
-    }
-    // Sub starts at offset 500 with a 600ms body → ends at 1100, way past A.
-    const sub = { ...task({ id: 'S', parentId: 'A', durationMs: 600 }), offsetFromParentMs: 500 }
-    const s = computeSchedule([m, k, trigger, dependent, sub], CONFIG)
-    // A is auto with a predecessor; dependency pins its start to 200, but the
-    // window must still stretch to contain the child (old bug pulled it back).
-    expect(s.byId.A.startMs).toBe(200)
-    expect(s.byId.A.endMs).toBeGreaterThanOrEqual(s.byId.S.endMs)
-    expect(s.byId.S.startMs).toBe(700) // 200 + 500
+    const trigger = task({ id: 'T', startMs: 0, durationMs: 1000, parentId: 'K' })
+    const outer = { ...task({ id: 'A', parentId: 'K', predecessors: [dep('T')] }) }
+    const inner = task({ id: 'S1', parentId: 'A', startMs: 200, durationMs: 50, kind: 'subaction' })
+    const grand = task({ id: 'S2', parentId: 'S1', startMs: 300, durationMs: 50, kind: 'subaction' })
+    const s = computeSchedule([m, k, trigger, outer, inner, grand], CONFIG)
+    // Only the deepest leaf S2 is schedulable; its window (300..350) shifts by
+    // +700 so the sub-tree earliest meets the predecessor end of 1000. Both
+    // container ancestors then roll up to that single leaf's window.
+    expect(s.byId.A.startMs).toBe(1000)
+    expect(s.byId.S1.startMs).toBe(1000)
+    expect(s.byId.S2.startMs).toBe(1000)
   })
 
-  it('chains nested sub-actions through their own parent start', () => {
+  it('keeps a child predecessor as a hard lower bound', () => {
     const [m, k, a] = fixture()
-    const s1 = { ...task({ id: 'S1', parentId: 'A', durationMs: 500 }), offsetFromParentMs: 100 }
-    const s2 = { ...task({ id: 'S2', parentId: 'S1', durationMs: 200 }), offsetFromParentMs: 50 }
-    const s = computeSchedule([m, k, a, s1, s2], CONFIG)
-    expect(s.byId.S1.startMs).toBe(1100)
-    expect(s.byId.S2.startMs).toBe(1150) // S1 start + 50
-  })
-
-  it('keeps a predecessor as a hard lower bound even when an offset would be earlier', () => {
-    const [m, k, a] = fixture()
-    const gate = { ...task({ id: 'G', startMs: 3000, durationMs: 100, parentId: 'K' }) }
-    // Sub offset 100 wants start 1100, but its predecessor ends at 3100.
-    const sub = {
-      ...task({ id: 'S', parentId: 'A', durationMs: 200, predecessors: [dep('G')] }),
-      offsetFromParentMs: 100
-    }
+    const gate = task({ id: 'G', startMs: 3000, durationMs: 100, parentId: 'K' })
+    const sub = task({ id: 'S', parentId: 'A', startMs: 1100, durationMs: 200, predecessors: [dep('G')] })
     const s = computeSchedule([m, k, a, gate, sub], CONFIG)
     expect(s.byId.S.startMs).toBe(3100)
+    expect(s.byId.A.startMs).toBe(3100) // container follows the child
+  })
+})
+
+describe('hierarchy vs predecessor conflict', () => {
+  const tree = () => {
+    const m = { ...task({ id: 'M', moduleName: '模块', durationMs: 0, parentId: null }), kind: 'module' as TaskKind }
+    const k = { ...task({ id: 'K', moduleName: '机构', durationMs: 0, parentId: 'M' }), kind: 'mechanism' as TaskKind }
+    const a = task({ id: 'A', startMs: 100, durationMs: 500, parentId: 'K' })
+    const s1 = task({ id: 'S1', startMs: 200, durationMs: 100, parentId: 'A', kind: 'subaction' })
+    const s2 = task({ id: 'S2', startMs: 400, durationMs: 100, parentId: 'A', kind: 'subaction' })
+    return { modules: [m, k, a, s1, s2], m, k, a, s1, s2 }
+  }
+
+  it('flags a child depending on its own ancestor container', () => {
+    const { modules, s1 } = tree()
+    expect(wouldCreateHierarchyConflict(modules, s1.id, 'A')).toBe(true)
+    expect(wouldCreateHierarchyConflict(modules, s1.id, 'K')).toBe(true)
+  })
+
+  it('flags an ancestor container depending on its own descendant', () => {
+    const { modules, a, s2 } = tree()
+    expect(wouldCreateHierarchyConflict(modules, a.id, s2.id)).toBe(true)
+  })
+
+  it('allows sibling sub-actions to depend on each other', () => {
+    const { modules, s1, s2 } = tree()
+    expect(wouldCreateHierarchyConflict(modules, s2.id, s1.id)).toBe(false)
+  })
+
+  it('allows unrelated actions to depend on each other', () => {
+    const { modules, s1 } = tree()
+    const other = task({ id: 'X', startMs: 0, durationMs: 100, parentId: s1.id, kind: 'subaction' })
+    expect(wouldCreateHierarchyConflict([...modules, other], other.id, 'S2')).toBe(false)
+  })
+})
+
+describe('cross-container dependency with container shift', () => {
+  it('a leaf depending on another container leaf keeps a hard lower bound after shifts', () => {
+    const m = { ...task({ id: 'M', moduleName: '模块', durationMs: 0, parentId: null }), kind: 'module' as TaskKind }
+    const k = { ...task({ id: 'K', moduleName: '机构', durationMs: 0, parentId: 'M' }), kind: 'mechanism' as TaskKind }
+    // Container A with predecessor T; its child SA is a dependency source.
+    const t = task({ id: 'T', startMs: 0, durationMs: 1000, parentId: 'K' })
+    const a = { ...task({ id: 'A', parentId: 'K', predecessors: [dep('T')] }) }
+    const sa = task({ id: 'SA', parentId: 'A', startMs: 200, durationMs: 100, kind: 'subaction' })
+    // Leaf SB (outside A) depends on SA with FS.
+    const b = { ...task({ id: 'B', parentId: 'K', startMs: 0, durationMs: 50, predecessors: [dep('SA')] }) }
+    const s = computeSchedule([m, k, t, a, sa, b], CONFIG)
+    // SA shifts to T end (1000); B must not start before SA's shifted end (1100).
+    expect(s.byId.SA.startMs).toBe(1000)
+    expect(s.byId.B.startMs).toBeGreaterThanOrEqual(s.byId.SA.endMs)
   })
 })

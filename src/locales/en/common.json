@@ -432,7 +432,10 @@
     "mechanismConflictHint": "Amber marks a mechanism concurrency conflict: one mechanism running multiple actions at the same time (hint only — timing is not auto-changed).",
     "subRelativeHint": "A sub-action's start/end are offsets from its parent action (ms); they follow when the parent moves.",
     "startOffset": "Start offset (ms)",
-    "endOffset": "End offset (ms)"
+    "endOffset": "End offset (ms)",
+    "endOffsetReadonly": "Derived from start offset + duration; no need to fill in separately",
+    "childDrivenHint": "This action has sub-actions: its start/end are rolled up from the earliest child start and latest child end, so they cannot be edited directly. Edit a child to update this action.",
+    "absoluteHint": "Uses an absolute clock (ms); if the node has children, its time is rolled up from them."
   },
   "timeScale": {
     "title": "Time scale & precision",

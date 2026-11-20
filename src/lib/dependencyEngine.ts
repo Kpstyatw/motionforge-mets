@@ -239,6 +239,33 @@ export function wouldCreateCycle(modules: ModuleData[], taskId: string, fromId: 
   return walk(fromId)
 }
 
+/**
+ * In the child-driven model a container's time is derived from its sub-tree.
+ * A dependency between a node and its own ancestor/descendant is therefore a
+ * cycle even if the plain dependency graph is acyclic: the child would wait
+ * for the parent while the parent's time is decided by that same child.
+ * Sibling-to-sibling edges inside one container remain legal.
+ */
+export function isAncestorOf(modules: ModuleData[], ancestorId: string, nodeId: string): boolean {
+  if (ancestorId === nodeId) return true
+  const byId = new Map(modules.map(m => [m.id, m]))
+  let cursor = byId.get(nodeId)?.parentId
+  const seen = new Set<string>([nodeId])
+  while (cursor && !seen.has(cursor)) {
+    if (cursor === ancestorId) return true
+    seen.add(cursor)
+    cursor = byId.get(cursor)?.parentId
+  }
+  return false
+}
+
+/** True when making `taskId` depend on `fromId` crosses a hierarchy boundary. */
+export function wouldCreateHierarchyConflict(
+  modules: ModuleData[], taskId: string, fromId: string
+): boolean {
+  return isAncestorOf(modules, fromId, taskId) || isAncestorOf(modules, taskId, fromId)
+}
+
 export function collectDescendantIds(modules: ModuleData[], rootId: string): string[] {
   const children = new Map<string, string[]>()
   modules.forEach(m => {
@@ -409,7 +436,23 @@ export function computeSchedule(
     }
   })
 
-  // Pass 1 — schedule every real task in dependency order.
+  // Child-driven model (v1.2): an action/sub-action that OWNS children is a
+  // container — its time is not authored but rolled up from its subtree. Only
+  // leaf actions/sub-actions carry an absolute start and take part in
+  // dependency scheduling. A container's own predecessors apply to the whole
+  // subtree as a single translation (Pass 1.5).
+  const containerIds = new Set(
+    rows.filter(m => leafIds.has(m.id) && (childMap.get(m.id)?.length ?? 0) > 0).map(m => m.id)
+  )
+  const schedulableIds = new Set(
+    rows.filter(m => leafIds.has(m.id) && !containerIds.has(m.id)).map(m => m.id)
+  )
+
+  // Pass 1 — schedule every real task in dependency order. Containers are
+  // scheduled here too, so their predecessor edges keep their place in the
+  // topological order; their authored start is only a *candidate* position —
+  // Pass 1.5 replaces it with the sub-tree roll-up (child is the source of
+  // truth) and applies any predecessor constraint as a whole-sub-tree shift.
   const leafResult = new Map<string, { startMs: number; durationMs: number; constraintMs: number | null; clamped: boolean; predecessorIds: string[] }>()
   order.forEach(id => {
     const m = byRow.get(id)!
@@ -449,101 +492,134 @@ export function computeSchedule(
     })
   })
 
-  // Pass 1.5 — hierarchical offset propagation (parent → child).
-  // A sub-action carrying `offsetFromParentMs` does not use its own absolute
-  // anchor: its start is the nearest action-like ancestor's resolved start plus
-  // that offset. Because we resolve ancestors first, nested sub-actions chain
-  // naturally. Moving the parent (manual edit OR dependency cascade) therefore
-  // drags the whole sub-tree along. A predecessor constraint remains a hard
-  // lower bound, so an offset can never place a sub-action before its required
-  // predecessors.
-  const rowById = new Map(rows.map(m => [m.id, m]))
-
-  const ancestorActionStart = (id: string): number | null => {
-    let cursor = rowById.get(id)?.parentId
-    const seen = new Set<string>([id])
-    while (cursor && !seen.has(cursor)) {
-      seen.add(cursor)
-      const node = rowById.get(cursor)
-      if (!node) return null
-      if (node.kind === 'action' || node.kind === 'subaction') {
-        const ancestor = leafResult.get(node.id)
-        return ancestor ? ancestor.startMs : null
-      }
-      cursor = node.parentId
-    }
-    return null
-  }
-
-  const offsetRows = rows
-    .filter(m => leafIds.has(m.id) && m.offsetFromParentMs !== undefined)
-    .sort((a, b) => depthOf(a, rowById) - depthOf(b, rowById))
-  offsetRows.forEach(m => {
-    const result = leafResult.get(m.id)
-    const parentStart = ancestorActionStart(m.id)
-    if (!result || parentStart === null) return
-    const base = parentStart + Math.round(m.offsetFromParentMs ?? 0)
-    const startMs = result.constraintMs === null ? base : Math.max(base, result.constraintMs)
-    const resolved = Math.max(0, startMs)
-    result.clamped = result.clamped || (result.constraintMs !== null && result.constraintMs > base)
-    result.startMs = resolved
-  })
-
-  // Pass 1.6 — action window containment (child → parent).
-  // An action/sub-action that owns child sub-actions grows its duration just
-  // enough to contain the whole sub-tree's final bounds. This runs AFTER offset
-  // propagation and AFTER dependency constraints, so a parent that is `auto`
-  // and has predecessors can no longer be pulled back and leave a child
-  // sticking out. Fixed periods / roll-up rows are unaffected.
-  const subtreeEnd = (id: string, seen = new Set<string>()): number => {
-    if (seen.has(id)) return 0
-    seen.add(id)
-    const own = leafResult.get(id)
-    let end = own ? own.startMs + own.durationMs : 0
-    ;(childMap.get(id) ?? []).forEach(child => { end = Math.max(end, subtreeEnd(child, seen)) })
-    return end
-  }
-  const containingRows = rows
-    .filter(m => leafIds.has(m.id) && (childMap.get(m.id)?.length ?? 0) > 0)
-    .sort((a, b) => depthOf(b, rowById) - depthOf(a, rowById)) // deepest first: nested containment composes
-  containingRows.forEach(m => {
-    const result = leafResult.get(m.id)
-    if (!result) return
-    let maxEnd = result.startMs + result.durationMs
-    ;(childMap.get(m.id) ?? []).forEach(child => { maxEnd = Math.max(maxEnd, subtreeEnd(child)) })
-    const grown = Math.max(0, quantize(maxEnd - result.startMs, config.precisionMs, 'ceil'))
-    if (grown > result.durationMs) result.durationMs = grown
-  })
-
-  // Pass 2 — roll descendant task bounds up through the hierarchy.
+  // Pass 2 — roll descendant task bounds up through the hierarchy. Container
+  // times come from this roll-up, NOT from their authored start: the children
+  // are the source of truth (child-driven model).
   const rollup = new Map<string, { startMs: number; endMs: number }>()
   const rollupOf = (id: string, guard = new Set<string>()): { startMs: number; endMs: number } => {
     if (rollup.has(id)) return rollup.get(id)!
     if (guard.has(id)) return { startMs: 0, endMs: 0 }
     guard.add(id)
     const own = leafResult.get(id)
-    let start = own ? own.startMs : Number.POSITIVE_INFINITY
-    let end = own ? own.startMs + own.durationMs : 0
+    const isContainer = containerIds.has(id)
+    // A container contributes only its children's bounds; a leaf contributes
+    // its own resolved window. Summary rows (module/mechanism) have no own.
+    let start = own && !isContainer ? own.startMs : Number.POSITIVE_INFINITY
+    let end = own && !isContainer ? own.startMs + own.durationMs : 0
     ;(childMap.get(id) ?? []).forEach(child => {
       const r = rollupOf(child, guard)
       if (r.endMs <= r.startMs) return
       start = Math.min(start, r.startMs)
       end = Math.max(end, r.endMs)
     })
-    if (!Number.isFinite(start)) { start = 0; end = 0 }
+    if (!Number.isFinite(start)) {
+      // Container with no schedulable descendant — fall back to its own
+      // authored window so it never disappears from the Gantt.
+      if (own) { start = own.startMs; end = own.startMs + own.durationMs }
+      else { start = 0; end = 0 }
+    }
     const result = { startMs: start, endMs: end }
     rollup.set(id, result)
     return result
   }
-  rows.forEach(m => rollupOf(m.id))
+  const recomputeRollup = () => { rollup.clear(); rows.forEach(m => rollupOf(m.id)) }
+  recomputeRollup()
+
+  // Pass 1.5 — child-driven container positioning.
+  // A container's own time is dropped; its window equals the sub-tree roll-up.
+  // If it has predecessors, the constraint is applied to the WHOLE sub-tree as
+  // one translation (deepest-first so nested containers compose): every
+  // schedulable leaf under it moves by the same delta, preserving all internal
+  // gaps and dependencies. A predecessor is a hard lower bound, so a sub-tree
+  // already at/after the constraint is left untouched.
+  const rowById = new Map(rows.map(m => [m.id, m]))
+  const descendantLeaves = (id: string, seen = new Set<string>()): string[] => {
+    if (seen.has(id)) return []
+    const local = new Set(seen)
+    local.add(id)
+    const out: string[] = []
+    ;(childMap.get(id) ?? []).forEach(child => {
+      if (schedulableIds.has(child)) out.push(child)
+      out.push(...descendantLeaves(child, local))
+    })
+    return out
+  }
+  const containersDeepFirst = rows
+    .filter(m => containerIds.has(m.id))
+    .sort((a, b) => depthOf(b, rowById) - depthOf(a, rowById))
+
+  containersDeepFirst.forEach(m => {
+    const result = leafResult.get(m.id)
+    if (!result) return
+    let r = rollup.get(m.id)!
+    const span = Math.max(0, r.endMs - r.startMs)
+    const deps = (m.predecessors ?? []).filter(
+      (d): d is Dependency => leafIds.has(d.fromId) && d.fromId !== m.id && leafResult.has(d.fromId)
+    )
+    let constraintMs: number | null = null
+    deps.forEach(d => {
+      const pred = leafResult.get(d.fromId)!
+      const value = constraintFor(d.type, pred.startMs, pred.startMs + pred.durationMs, span, d.lagMs || 0)
+      constraintMs = constraintMs === null ? value : Math.max(constraintMs, value)
+    })
+    if (constraintMs !== null) constraintMs = Math.max(0, quantize(constraintMs, config.precisionMs, 'ceil'))
+    if (constraintMs !== null && constraintMs > r.startMs) {
+      const delta = constraintMs - r.startMs
+      descendantLeaves(m.id).forEach(id => {
+        const leaf = leafResult.get(id)
+        if (leaf) leaf.startMs += delta
+      })
+      result.clamped = true
+      recomputeRollup()
+      r = rollup.get(m.id)!
+    }
+    // Container start/end now mirror the (possibly shifted) sub-tree bounds.
+    result.startMs = r.startMs
+    result.durationMs = Math.max(0, r.endMs - r.startMs)
+    result.constraintMs = constraintMs
+    result.predecessorIds = deps.map(d => d.fromId)
+  })
+
+  // Pass 1.7 — dependency propagation after sub-tree shifts. A container's
+  // predecessor may have moved some leaves later; every task that depends on
+  // those leaves must honour their NEW end as a lower bound. Walk the
+  // topological order repeatedly (shifts only push forward, so it converges)
+  // and push any successor that would now start too early.
+  for (let sweep = 0; sweep < order.length; sweep += 1) {
+    let moved = false
+    order.forEach(id => {
+      const m = byRow.get(id)!
+      const result = leafResult.get(id)
+      if (!result || containerIds.has(id)) return
+      const deps = (m.predecessors ?? []).filter(
+        (d): d is Dependency => leafIds.has(d.fromId) && d.fromId !== id && leafResult.has(d.fromId)
+      )
+      const durationMs = result.durationMs
+      let floor: number | null = null
+      deps.forEach(d => {
+        const pred = leafResult.get(d.fromId)!
+        const value = constraintFor(d.type, pred.startMs, pred.startMs + pred.durationMs, durationMs, d.lagMs || 0)
+        floor = floor === null ? value : Math.max(floor, value)
+      })
+      if (floor !== null && floor > result.startMs) {
+        result.startMs = Math.max(0, quantize(floor, config.precisionMs, 'ceil'))
+        result.clamped = true
+        moved = true
+      }
+    })
+    if (!moved) break
+  }
+  recomputeRollup()
 
   const scheduled: Record<string, ScheduledTask> = {}
   rows.forEach(m => {
     const isSummary = summaryIds.has(m.id)
+    const isContainer = containerIds.has(m.id)
     const r = rollup.get(m.id)!
     const leaf = leafResult.get(m.id)
-    const startMs = isSummary ? r.startMs : (leaf?.startMs ?? r.startMs)
-    const endMs = isSummary ? r.endMs : (leaf ? leaf.startMs + leaf.durationMs : r.endMs)
+    // Containers and physical summaries both display the sub-tree roll-up.
+    const startMs = (isSummary || isContainer) ? r.startMs : (leaf?.startMs ?? r.startMs)
+    const endMs = (isSummary || isContainer) ? r.endMs : (leaf ? leaf.startMs + leaf.durationMs : r.endMs)
     const durationMs = Math.max(0, endMs - startMs)
     scheduled[m.id] = {
       id: m.id,
@@ -551,7 +627,7 @@ export function computeSchedule(
       module: m,
       kind: m.kind ?? 'action',
       isSummary,
-      isLeaf: !isSummary,
+      isLeaf: !isSummary && !isContainer && schedulableIds.has(m.id),
       startMs,
       durationMs,
       endMs,

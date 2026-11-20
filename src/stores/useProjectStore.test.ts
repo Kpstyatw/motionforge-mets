@@ -127,17 +127,18 @@ describe('parent action auto-expands to contain sub-action timing', () => {
       module('A', 'action', 'K', 0, 100),
       module('S', 'subaction', 'A', 10, 20)
     ])
-    expect(schedule().byId['A'].endMs).toBe(100)
+    // Child-driven: the container already mirrors its child's window.
+    expect(schedule().byId['A'].startMs).toBe(10)
+    expect(schedule().byId['A'].endMs).toBe(30)
 
-    // Push sub-action to 150..250, past the action's 100ms end.
+    // Push sub-action to 150..250; the container follows automatically.
     const changes = useProjectStore.getState().setTaskTiming('S', { startMs: 150, durationMs: 100 })
 
     const s = schedule()
     expect(s.byId['S'].startMs).toBe(150)
     expect(s.byId['S'].endMs).toBe(250)
-    // The resolved schedule (after commit/resolve) must show the grown action.
-    expect(s.byId['A'].startMs).toBe(0)
-    expect(s.byId['A'].endMs).toBeGreaterThanOrEqual(250)
+    expect(s.byId['A'].startMs).toBe(150)
+    expect(s.byId['A'].endMs).toBe(250)
     expect(changes.some(c => c.id === 'A')).toBe(true)
   })
 
@@ -386,7 +387,7 @@ describe('event-bound allocations', () => {
   })
 })
 
-describe('sub-action relative time model', () => {
+describe('child-driven time model', () => {
   function tree(withLegacyDep = false): ModuleData[] {
     const a = mk('A', 1000, 800)
     const s = {
@@ -398,35 +399,152 @@ describe('sub-action relative time model', () => {
     return [a, s]
   }
 
-  it('migrates a legacy sub-action into a relative offset and drops its ancestor dependency', () => {
-    load(tree(true))
+  it('migrates a legacy offset sub-action to absolute time and drops its ancestor dependency', () => {
+    // Old v1.1.x file: offset 200 from parent start 1000, stored absolute 1200.
+    const legacy = [mk('A', 1000, 800), {
+      ...mk('S', 1200, 300, [{ id: 'legacy', fromId: 'A', type: 'FS' as const, lagMs: 0 }]),
+      kind: 'subaction' as TaskKind, parentId: 'A', offsetFromParentMs: 200
+    }]
+    load(legacy)
     const p = useProjectStore.getState().project!
     const s = p.modules.find(m => m.id === 'S')!
-    expect(s.offsetFromParentMs).toBe(200) // 1200 - 1000
+    expect(s.offsetFromParentMs).toBeUndefined() // offset is no longer a source of truth
+    expect(s.startMs).toBe(1200) // absolute position preserved
     expect(s.predecessors ?? []).toHaveLength(0) // legacy FS-to-parent removed
     expect(schedule().byId.S.startMs).toBe(1200)
   })
 
-  it('writes a sub-action start edit as an offset relative to its parent', () => {
+  it('edits a sub-action start as an absolute clock', () => {
     load(tree())
-    useProjectStore.getState().setTaskTiming('S', { startMs: 500 })
-    const s = useProjectStore.getState().project!.modules.find(m => m.id === 'S')!
-    expect(s.offsetFromParentMs).toBe(500)
-    expect(schedule().byId.S.startMs).toBe(1500) // A start 1000 + 500
+    useProjectStore.getState().setTaskTiming('S', { startMs: 1500 })
+    expect(schedule().byId.S.startMs).toBe(1500)
   })
 
-  it('drags a sub-action along when only its parent action moves', () => {
+  it('rolls the parent action up to the sub-tree bounds when a child is edited', () => {
     load(tree())
-    expect(schedule().byId.S.startMs).toBe(1200)
-    useProjectStore.getState().setTaskTiming('A', { startMs: 3000 })
-    expect(schedule().byId.S.startMs).toBe(3200) // 3000 + 200
-  })
-
-  it('grows the parent action to contain an overshooting sub-action', () => {
-    load(tree())
+    expect(schedule().byId.A.startMs).toBe(1200) // A starts at earliest child
+    expect(schedule().byId.A.endMs).toBe(1500)   // A ends at latest child
     useProjectStore.getState().setTaskTiming('S', { durationMs: 2000 })
     const s = schedule()
-    expect(s.byId.S.endMs).toBe(3200) // 1000 + 200 + 2000
-    expect(s.byId.A.endMs).toBeGreaterThanOrEqual(s.byId.S.endMs)
+    expect(s.byId.S.endMs).toBe(3200)
+    expect(s.byId.A.endMs).toBe(3200) // parent follows automatically
+  })
+
+  it('ignores writes to a container action so it stays child-driven', () => {
+    load(tree())
+    useProjectStore.getState().setTaskTiming('A', { startMs: 5000 })
+    expect(schedule().byId.A.startMs).toBe(1200) // unchanged; child is the source
+  })
+
+  it('shifts the whole sub-tree as one when a predecessor requires a later start', () => {
+    // Child at 700; predecessor ends at 2000 → the sub-tree must move +1300.
+    const mods = [
+      mk('T', 0, 2000),
+      { ...mk('A', 600, 300, [{ id: 'd', fromId: 'T', type: 'FS' as const, lagMs: 0 }]) },
+      { ...mk('S', 700, 300), kind: 'subaction' as TaskKind, parentId: 'A' }
+    ]
+    load(mods)
+    const s = schedule()
+    expect(s.byId.A.startMs).toBe(2000) // rolled-up earliest child = constraint
+    expect(s.byId.S.startMs).toBe(2000) // child shifted by the same delta
+  })
+
+  it('keeps child times when the predecessor is already satisfied', () => {
+    const mods = [
+      mk('T', 0, 400),
+      { ...mk('A', 1000, 800, [{ id: 'd', fromId: 'T', type: 'FS' as const, lagMs: 0 }]) },
+      { ...mk('S', 1200, 300), kind: 'subaction' as TaskKind, parentId: 'A' }
+    ]
+    load(mods)
+    const s = schedule()
+    expect(s.byId.A.startMs).toBe(1200) // child is source of truth, not the authored 1000
+    expect(s.byId.S.startMs).toBe(1200)
+  })
+})
+
+describe('addAction child-driven timing', () => {
+  const base = () => [mk('A', 1000, 800)]
+  it('stores an absolute start for a new sub-action', () => {
+    load(base())
+    const id = useProjectStore.getState().addAction({
+      kind: 'subaction', parentId: 'A', actionDescription: '新子动作', durationMs: 100, startMs: 5000
+    })
+    expect(id).toBeTruthy()
+    const node = useProjectStore.getState().project!.modules.find(m => m.id === id)!
+    expect(node.startMs).toBe(5000)
+    expect(schedule().byId[id!].startMs).toBe(5000)
+  })
+
+  it('defaults a new sub-action to the parent end', () => {
+    load(base())
+    const id = useProjectStore.getState().addAction({ kind: 'subaction', parentId: 'A' })
+    // Store falls back to parent's authored start (1000); UI sends parent end.
+    expect(schedule().byId[id!].startMs).toBe(1000)
+  })
+})
+
+describe('leaf-to-container transition', () => {
+  it('an action is editable while childless, then becomes rolled-up once a child is added', () => {
+    load([mk('A', 1000, 800)])
+    // Childless: a timing edit takes effect directly.
+    useProjectStore.getState().setTaskTiming('A', { startMs: 2000 })
+    expect(schedule().byId.A.startMs).toBe(2000)
+
+    // Add a child at an absolute time; the parent now mirrors the child.
+    useProjectStore.getState().addAction({ kind: 'subaction', parentId: 'A', startMs: 3000, durationMs: 100 })
+    expect(schedule().byId.A.startMs).toBe(3000)
+    expect(schedule().byId.A.endMs).toBe(3100)
+
+    // Further edits to the action itself are ignored (child-driven).
+    useProjectStore.getState().setTaskTiming('A', { startMs: 9000 })
+    expect(schedule().byId.A.startMs).toBe(3000)
+  })
+
+  it('editing the child refreshes the container after the transition', () => {
+    load([mk('A', 1000, 800)])
+    const childId = useProjectStore.getState().addAction({ kind: 'subaction', parentId: 'A', startMs: 3000, durationMs: 100 })!
+    expect(schedule().byId.A.startMs).toBe(3000)
+    useProjectStore.getState().setTaskTiming(childId, { startMs: 5000, durationMs: 200 })
+    const s = schedule()
+    expect(s.byId[childId].startMs).toBe(5000)
+    expect(s.byId.A.startMs).toBe(5000)
+    expect(s.byId.A.endMs).toBe(5200)
+  })
+})
+
+describe('hierarchy-crossing predecessor guards', () => {
+  const tree = () => [
+    mk('A', 1000, 800),
+    { ...mk('S', 1200, 300), kind: 'subaction' as TaskKind, parentId: 'A' },
+    mk('X', 200, 100)
+  ]
+
+  it('rejects making a child depend on its own ancestor action', () => {
+    load(tree())
+    const s = useProjectStore.getState()
+    expect(s.addPredecessor('S', 'A')).toBe(false)
+    expect(schedule().byId.S.predecessorIds).toHaveLength(0)
+    expect(useProjectStore.getState().scheduleWarnings.join('')).toContain('上下级')
+  })
+
+  it('rejects making an ancestor action depend on its own child', () => {
+    load(tree())
+    const s = useProjectStore.getState()
+    expect(s.addPredecessor('A', 'S')).toBe(false)
+    expect(schedule().byId.A.predecessorIds).toHaveLength(0)
+  })
+
+  it('allows a normal cross-action dependency', () => {
+    load(tree())
+    expect(useProjectStore.getState().addPredecessor('X', 'A')).toBe(true)
+    expect(schedule().byId.X.predecessorIds).toContain('A')
+  })
+
+  it('migration drops an existing hierarchy-crossing dependency', () => {
+    load([
+      mk('A', 1000, 800, [{ id: 'bad', fromId: 'S', type: 'FS', lagMs: 0 }]),
+      { ...mk('S', 1200, 300), kind: 'subaction' as TaskKind, parentId: 'A' }
+    ])
+    expect(schedule().byId.A.predecessorIds).toHaveLength(0)
   })
 })

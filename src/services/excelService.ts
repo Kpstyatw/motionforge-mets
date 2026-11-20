@@ -580,9 +580,9 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
         durationMs: isSummary ? 0 : durationMs,
         endMs: startMs + (isSummary ? 0 : durationMs),
         startMode: text(row, 'startMode').includes('锁定') ? 'manual' : 'auto',
-        offsetFromParentMs: kind === 'subaction' && col.offsetFromParentMs >= 0
-          ? Math.max(0, Math.round(number(row, 'offsetFromParentMs')))
-          : undefined,
+        // Child-driven model (v1.2): the legacy "相对父偏移" column is kept for
+        // file compatibility but is no longer read back. Absolute startMs is
+        // the single source of truth.
         predecessors: [],
         startX: 0,
         calculatedStartX: 0,

@@ -9,7 +9,7 @@ import {
 import { useHistoryStore } from './useHistoryStore'
 import {
   collectDescendantIds, computeSchedule, normalizeModules,
-  renumberHierarchyCodes, syncLegacyFields, wouldCreateCycle
+  renumberHierarchyCodes, syncLegacyFields, wouldCreateCycle, wouldCreateHierarchyConflict
 } from '@/lib/dependencyEngine'
 import {
   DEFAULT_EXCEL_LAYOUT, DEFAULT_GANTT_CONFIG, DEFAULT_TIME_CONFIG,
@@ -80,21 +80,41 @@ export function normalizeRotaryMotion(input: Partial<RotaryMotion> | null | unde
 }
 
 /**
- * Backfill `offsetFromParentMs` for legacy sub-actions that only carry an
- * absolute startMs. The offset is measured from the nearest ancestor ACTION's
- * absolute start so old files keep their on-screen positions. Nested
- * sub-actions are handled by resolving ancestors top-down. Actions and
- * summaries never receive an offset — they stay on absolute time.
+ * Child-driven model (v1.2): sub-actions are authored on ABSOLUTE time again.
+ * Files saved by the v1.1.x relative-offset model stored `offsetFromParentMs`
+ * plus an already-resolved absolute `startMs` (syncLegacyFields wrote it back).
+ * To keep old projects visually identical we materialise the absolute start:
+ *   resolvedStart = nearest ancestor action's start + offset
+ * but prefer the stored absolute start when it already matches that value
+ * (it is authoritative after a schedule commit). Then we drop the offset field
+ * so it can never act as a second source of truth. Dependencies pointing at an
+ * ancestor were legacy position hacks from the pre-offset era; drop those too.
  */
-function deriveSubActionOffsets(modules: ModuleData[]): ModuleData[] {
+function materializeSubActionTimes(modules: ModuleData[]): ModuleData[] {
   const byId = new Map(modules.map(m => [m.id, m]))
   let changed = false
-  const result = modules.map(m => {
-    if (m.kind !== 'subaction') return m
-    // Collect every ancestor. The nearest action-like one is the offset base;
-    // dependencies pointing at ANY ancestor are legacy position hacks ("child
-    // starts at parent end") that now conflict with the relative model, so drop
-    // them. Dependencies on unrelated actions remain as real lower bounds.
+  // Top-down: a nested sub-action's ancestor base must itself be resolved.
+  const depthOf = (m: ModuleData): number => {
+    let d = 0
+    let cursor = m.parentId ? byId.get(m.parentId) : undefined
+    const guard = new Set<string>([m.id])
+    while (cursor && !guard.has(cursor.id)) {
+      guard.add(cursor.id); d += 1
+      cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined
+    }
+    return d
+  }
+  const ordered = [...modules].sort((a, b) => {
+    const sa = a.kind === 'module' ? 0 : a.kind === 'mechanism' ? 1 : 2
+    const sb = b.kind === 'module' ? 0 : b.kind === 'mechanism' ? 1 : 2
+    return sa - sb || depthOf(a) - depthOf(b)
+  })
+  const resolved = new Map<string, number>()
+  const result = [...modules]
+  const indexById = new Map(modules.map((m, i) => [m.id, i]))
+
+  ordered.forEach(m => {
+    // Collect ancestors; nearest action-like one is the legacy offset base.
     const ancestors = new Set<string>()
     let cursor = m.parentId ? byId.get(m.parentId) : undefined
     let anchor: ModuleData | undefined
@@ -105,14 +125,29 @@ function deriveSubActionOffsets(modules: ModuleData[]): ModuleData[] {
       if (!anchor && (cursor.kind === 'action' || cursor.kind === 'subaction')) anchor = cursor
       cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined
     }
-    const keptPreds = (m.predecessors ?? []).filter(d => !ancestors.has(d.fromId))
-    const offset = m.offsetFromParentMs !== undefined
-      ? m.offsetFromParentMs
-      : anchor ? Math.max(0, Math.round((m.startMs ?? 0) - (anchor.startMs ?? 0))) : undefined
+    // Drop any hierarchy-crossing dependency (either direction): these were
+    // legacy position hacks and are circular under the child-driven model.
+    // Sibling-to-sibling edges stay intact.
+    const keptPreds = (m.predecessors ?? []).filter(
+      d => !wouldCreateHierarchyConflict(modules, m.id, d.fromId)
+    )
     const removedDep = keptPreds.length !== (m.predecessors ?? []).length
-    if (offset === undefined && !removedDep) return m
+    const hadOffset = m.offsetFromParentMs !== undefined
+    const base = anchor ? (resolved.get(anchor.id) ?? anchor.startMs ?? 0) : 0
+    const absolute = hadOffset ? Math.max(0, Math.round(base + (m.offsetFromParentMs ?? 0))) : (m.startMs ?? 0)
+    resolved.set(m.id, absolute)
+
+    if (!hadOffset && !removedDep) return
     changed = true
-    return { ...m, offsetFromParentMs: offset, predecessors: keptPreds }
+    const i = indexById.get(m.id)!
+    result[i] = {
+      ...m,
+      startMs: absolute,
+      anchorMs: absolute,
+      endMs: absolute + Math.max(0, m.durationMs ?? 0),
+      offsetFromParentMs: undefined,
+      predecessors: keptPreds
+    }
   })
   return changed ? result : modules
 }
@@ -124,7 +159,7 @@ export function migrateProject(input: Partial<ProjectData> & { modules?: ModuleD
   // Recompute display codes from the tree, so legacy T01/T02 projects and
   // imported workbooks immediately gain hierarchy-aware numbering.
   const normalized = renumberHierarchyCodes(normalizeModules(input.modules ?? [], timeConfig))
-  const modules = deriveSubActionOffsets(normalized)
+  const modules = materializeSubActionTimes(normalized)
   // Migrate legacy node-side ownership (ModuleData.resourceId = R) to the new
   // resource-side ownerNodeId, so old files gain one-to-many support. The node
   // field is kept as a mirror for older readers.
@@ -267,21 +302,6 @@ interface CommitState {
 /** A rejected name edit must say why — silent no-ops read like a broken UI. */
 function nameWarning(scope: NameScope, name: string, reason: NameIssueReason): string {
   return formatNameIssue({ scope, id: '', name, reason })
-}
-
-/** Resolved start of the nearest action-like ancestor, or null when none. */
-function nearestActionStart(modules: ModuleData[], id: string): number | null {
-  const byId = new Map(modules.map(m => [m.id, m]))
-  let cursor = byId.get(id)?.parentId
-  const seen = new Set<string>([id])
-  while (cursor && !seen.has(cursor)) {
-    seen.add(cursor)
-    const node = byId.get(cursor)
-    if (!node) return null
-    if (node.kind === 'action' || node.kind === 'subaction') return node.startMs ?? 0
-    cursor = node.parentId
-  }
-  return null
 }
 
 /** Snap an event anchor's fine offset to the project precision. */
@@ -435,71 +455,40 @@ export const useProjectStore = create<ProjectState>()(
         const cfg = normalizeTimeConfig(state.project.timeConfig)
         const current = state.project.modules.find(m => m.id === id)
         if (!current) return
-        const isSub = current.kind === 'subaction'
+        // A container's time is rolled up from its children (child-driven
+        // model) — it has no authored time of its own. The editor keeps it
+        // read-only; ignore any late write so it cannot become a second truth.
+        const isContainer = state.project.modules.some(m => m.parentId === id)
+        if (isContainer) return
+
         const start = current.startMs ?? 0
         let durationMs = current.durationMs ?? current.moveCount * current.duration
         if (patch.durationMs !== undefined) {
           durationMs = Math.max(0, quantize(patch.durationMs, cfg.precisionMs, 'round'))
         } else if (patch.endMs !== undefined) {
-          // Both fields share a coordinate system: relative offset for a
-          // sub-action, absolute ms for an action. duration = end - start in
-          // either case, so subtract the matching authored start.
-          durationMs = isSub
-            ? Math.max(0, quantize(patch.endMs - (current.offsetFromParentMs ?? 0), cfg.precisionMs, 'round'))
-            : Math.max(0, quantize(patch.endMs - start, cfg.precisionMs, 'round'))
+          durationMs = Math.max(0, quantize(patch.endMs - start, cfg.precisionMs, 'round'))
         }
         const hasPredecessors = (current.predecessors?.length ?? 0) > 0
         const startMode: StartMode = patch.startMs !== undefined && hasPredecessors
           ? 'manual'
           : (current.startMode ?? 'auto')
-
-        // For a sub-action, the authored start field is an offset from the
-        // parent action's resolved start. Store it in offsetFromParentMs and
-        // derive a provisional absolute start for storage/legacy mirrors; the
-        // scheduler re-derives the authoritative start from the live parent.
-        let offsetFromParentMs = current.offsetFromParentMs
-        let startMs: number
-        let anchorMs: number
-        if (isSub) {
-          const parentStart = nearestActionStart(state.project.modules, id)
-          if (patch.startMs !== undefined) {
-            offsetFromParentMs = Math.max(0, quantize(patch.startMs, cfg.precisionMs, 'round'))
-          } else if (offsetFromParentMs === undefined && parentStart !== null) {
-            offsetFromParentMs = Math.max(0, Math.round(start - parentStart))
-          }
-          const off = offsetFromParentMs ?? 0
-          startMs = parentStart === null ? start : parentStart + off
-          anchorMs = parentStart === null ? (current.anchorMs ?? start) : startMs
-        } else {
-          startMs = patch.startMs !== undefined
-            ? Math.max(0, quantize(patch.startMs, cfg.precisionMs, 'round'))
-            : start
-          anchorMs = patch.startMs !== undefined ? startMs : (current.anchorMs ?? current.startMs ?? start)
-        }
+        const startMs = patch.startMs !== undefined
+          ? Math.max(0, quantize(patch.startMs, cfg.precisionMs, 'round'))
+          : start
+        const anchorMs = patch.startMs !== undefined ? startMs : (current.anchorMs ?? current.startMs ?? start)
 
         const edited = state.project.modules.map(m => m.id === id
-          ? {
-              ...m,
-              startMs,
-              anchorMs,
-              durationMs,
-              startMode,
-              offsetFromParentMs
-            }
+          ? { ...m, startMs, anchorMs, durationMs, startMode, offsetFromParentMs: undefined }
           : m)
-        // The scheduler is now the single source of truth for containment:
-        // after offset propagation it grows every action/sub-action ancestor
-        // to cover its sub-tree (Pass 1.6). We do NOT pre-write ancestor times
-        // here — doing so with cached child times pulls an edited parent start
-        // backwards. Instead, preview the resolved schedule purely to build an
-        // accurate "parent extended" notice, then commit the authored edit.
+        // Preview the resolved schedule to build an accurate "parent extended"
+        // notice: growing a leaf widens every container ancestor's roll-up.
         const before = new Map(state.project.modules.map(m => [m.id, m]))
         const preview = computeSchedule(edited, cfg)
         changes = preview.tasks
-          .filter(t => !t.isSummary && t.parentId)
+          .filter(t => t.parentId && (t.kind === 'action' || t.kind === 'subaction'))
           .flatMap(t => {
             const old = before.get(t.id)
-            if (!old || (old.kind !== 'action' && old.kind !== 'subaction')) return []
+            if (!old) return []
             const oldStart = old.startMs ?? 0
             const oldEnd = oldStart + (old.durationMs ?? 0)
             if (t.endMs <= oldEnd) return []
@@ -532,6 +521,10 @@ export const useProjectStore = create<ProjectState>()(
         set(state => { state.scheduleWarnings = ['添加前置任务会形成循环依赖，已阻止'] })
         return false
       }
+      if (wouldCreateHierarchyConflict(project.modules, taskId, fromId)) {
+        set(state => { state.scheduleWarnings = ['前置任务与自身存在上下级关系：父动作时间由子动作汇总，不能互相依赖，已阻止'] })
+        return false
+      }
       set(state => {
         if (!state.project) return
         const next = state.project.modules.map(m => m.id === taskId
@@ -558,6 +551,10 @@ export const useProjectStore = create<ProjectState>()(
       if (!project) return false
       if (patch.fromId && wouldCreateCycle(project.modules, taskId, patch.fromId)) {
         set(state => { state.scheduleWarnings = ['修改前置任务会形成循环依赖，已阻止'] })
+        return false
+      }
+      if (patch.fromId && wouldCreateHierarchyConflict(project.modules, taskId, patch.fromId)) {
+        set(state => { state.scheduleWarnings = ['前置任务与自身存在上下级关系：父子时间由子动作汇总，不能互相依赖，已阻止'] })
         return false
       }
       set(state => {
@@ -664,22 +661,10 @@ export const useProjectStore = create<ProjectState>()(
       }
       color = color ?? MODULE_COLORS[new Set(working.map(m => m.moduleName)).size % MODULE_COLORS.length]
 
+      // Child-driven model: every action/sub-action is authored on absolute
+      // time. A container's displayed time is rolled up from its children by
+      // the scheduler, so the authored start here is just its initial position.
       const startMs = Math.max(0, quantize(options?.startMs ?? parent?.startMs ?? 0, cfg.precisionMs, 'round'))
-      // A sub-action's start is relative to its nearest action-like ancestor.
-      // Summary parents (module/mechanism) are skipped; nested sub-actions
-      // chain through their own parent's resolved start.
-      let offsetFromParentMs: number | undefined
-      if (kind === 'subaction') {
-        let base = parent
-        const baseGuard = new Set<string>()
-        while (base && (base.kind === 'module' || base.kind === 'mechanism') && !baseGuard.has(base.id)) {
-          baseGuard.add(base.id)
-          base = base.parentId ? working.find(m => m.id === base!.parentId) : undefined
-        }
-        if (base && (base.kind === 'action' || base.kind === 'subaction')) {
-          offsetFromParentMs = Math.max(0, Math.round(startMs - (base.startMs ?? 0)))
-        }
-      }
       const durationMs = isSummary ? 0 : quantize(options?.durationMs ?? cfg.scaleMs * 10, cfg.precisionMs, 'ceil')
       const displayName = options?.actionDescription
         ?? (kind === 'module' ? '新模块' : kind === 'mechanism' ? '新机构' : kind === 'subaction' ? '新子动作' : '新动作')
@@ -711,7 +696,6 @@ export const useProjectStore = create<ProjectState>()(
         durationMs,
         endMs: startMs + durationMs,
         startMode: 'auto',
-        offsetFromParentMs,
         predecessors: [],
         startX: startMs / cfg.scaleMs,
         calculatedStartX: startMs / cfg.scaleMs,

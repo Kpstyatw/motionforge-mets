@@ -432,7 +432,10 @@
     "mechanismConflictHint": "橙色为机构并发冲突：同一机构在同一时间执行多个动作（仅提示，不自动改时序）。点击可跳到对应动作。",
     "subRelativeHint": "子动作的开始/结束为相对父动作的偏移 (ms)；父动作移动时自动跟随。",
     "startOffset": "开始偏移 (ms)",
-    "endOffset": "结束偏移 (ms)"
+    "endOffset": "结束偏移 (ms)",
+    "endOffsetReadonly": "由开始偏移 + 持续时长自动得出，无需单独填写",
+    "childDrivenHint": "该动作有子动作：开始/结束由所有子动作的最早开始与最晚结束自动汇总，不能直接修改。编辑子动作时间即可更新本动作。",
+    "absoluteHint": "使用绝对时刻 (ms)；若有子动作，其时间将由子动作自动汇总。"
   },
   "timeScale": {
     "title": "时间刻度与精度",

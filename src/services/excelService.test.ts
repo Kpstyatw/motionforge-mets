@@ -33,7 +33,7 @@ function fixture(): ProjectData {
     node('K', 'T02', 'mechanism', 'M', 0, 0),
     node('A', 'T03', 'action', 'K', 200, 800),
     node('B', 'T04', 'action', 'K', 0, 300, [{ id: 'e1', fromId: 'A', type: 'FS', lagMs: 125 }]),
-    node('S', 'T05', 'subaction', 'B', 0, 50, [{ id: 'e2', fromId: 'B', type: 'SS', lagMs: 10 }])
+    node('S', 'T05', 'subaction', 'B', 0, 50, [{ id: 'e2', fromId: 'A', type: 'SS', lagMs: 10 }])
   ]
   return {
     name: 'IVD 测试项目',
@@ -137,8 +137,10 @@ describe('Gantt ⇄ Excel', () => {
     const rows = flattenTree(schedule)
     const table = buildExcelRows(schedule, rows)
     expect(table).toHaveLength(5)
-    expect(schedule.byId.B.startMs).toBe(1125) // A ends at 1000 + 125 lag
-    expect(schedule.byId.S.startMs).toBe(1135)
+    // Child-driven: B's predecessor A ends at 1125, shifting its sub-tree;
+    // S honours that hard lower bound, and B rolls up to S.
+    expect(schedule.byId.S.startMs).toBe(1125)
+    expect(schedule.byId.B.startMs).toBe(1125)
     const b = table.find(r => r.code === 'T04')!
     expect(b.startMs + b.durationMs).toBe(b.endMs)
     expect(b.startMs).toBe(schedule.byId.B.startMs)
@@ -322,18 +324,17 @@ describe('Gantt ⇄ Excel', () => {
     expect(Math.ceil(600_000 / step)).toBeLessThanOrEqual(180)
   })
 
-  it('round-trips a sub-action offsetFromParentMs', async () => {
+  it('round-trips absolute sub-action time (legacy offset column is no longer the source)', async () => {
     const project = fixture()
-    project.modules = project.modules.map(m => m.id === 'S'
-      ? { ...m, offsetFromParentMs: 120 }
-      : m)
     const schedule = computeSchedule(project.modules, CONFIG)
     const blob = await buildGanttWorkbook({
       project, schedule, rows: flattenTree(schedule), layout: project.excelLayout
     })
-    const result = await importGanttWorkbook(new File([await blob.arrayBuffer()], 'offset.xlsx'))
+    const result = await importGanttWorkbook(new File([await blob.arrayBuffer()], 'absolute.xlsx'))
     expect(result.success).toBe(true)
-    expect(result.modules!.find(m => m.id === 'S')!.offsetFromParentMs).toBe(120)
-    expect(result.modules!.find(m => m.id === 'A')!.offsetFromParentMs).toBeUndefined()
+    const s = result.modules!.find(m => m.id === 'S')!
+    // S's authored absolute start round-trips; no offset is reintroduced.
+    expect(s.startMs).toBe(schedule.byId.S.startMs)
+    expect(s.offsetFromParentMs).toBeUndefined()
   })
 })

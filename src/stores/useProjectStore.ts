@@ -3,8 +3,8 @@ import { immer } from 'zustand/middleware/immer'
 import { v4 as uuidv4 } from 'uuid'
 import {
   CanvasConfig, CycleConfig, Dependency, DependencyType, ExcelLayoutConfig,
-  GanttConfig, ModuleData, ProjectData, ProjectFileFormat, Resource, ResourceAllocation,
-  RotaryMotion, StartMode, TaskKind, TimeConfig
+  AllocationEventRef, GanttConfig, ModuleData, ProjectData, ProjectFileFormat, Resource,
+  ResourceAllocation, RotaryMotion, StartMode, TaskKind, TimeConfig
 } from '@/types'
 import { useHistoryStore } from './useHistoryStore'
 import {
@@ -21,7 +21,7 @@ import {
   NameIssueReason, NameScope, uniqueName
 } from '@/lib/nameValidation'
 import { canBeParentOf, refreshSubtreeLabels } from '@/lib/hierarchy'
-import { autoExpandParentTimes, ParentTimeChange } from '@/lib/parentTimeConstraint'
+import { ParentTimeChange } from '@/lib/parentTimeConstraint'
 
 /**
  * Project store — the only writer of resolved timing.
@@ -79,13 +79,59 @@ export function normalizeRotaryMotion(input: Partial<RotaryMotion> | null | unde
   }
 }
 
+/**
+ * Backfill `offsetFromParentMs` for legacy sub-actions that only carry an
+ * absolute startMs. The offset is measured from the nearest ancestor ACTION's
+ * absolute start so old files keep their on-screen positions. Nested
+ * sub-actions are handled by resolving ancestors top-down. Actions and
+ * summaries never receive an offset — they stay on absolute time.
+ */
+function deriveSubActionOffsets(modules: ModuleData[]): ModuleData[] {
+  const byId = new Map(modules.map(m => [m.id, m]))
+  let changed = false
+  const result = modules.map(m => {
+    if (m.kind !== 'subaction') return m
+    // Collect every ancestor. The nearest action-like one is the offset base;
+    // dependencies pointing at ANY ancestor are legacy position hacks ("child
+    // starts at parent end") that now conflict with the relative model, so drop
+    // them. Dependencies on unrelated actions remain as real lower bounds.
+    const ancestors = new Set<string>()
+    let cursor = m.parentId ? byId.get(m.parentId) : undefined
+    let anchor: ModuleData | undefined
+    const guard = new Set<string>([m.id])
+    while (cursor && !guard.has(cursor.id)) {
+      guard.add(cursor.id)
+      ancestors.add(cursor.id)
+      if (!anchor && (cursor.kind === 'action' || cursor.kind === 'subaction')) anchor = cursor
+      cursor = cursor.parentId ? byId.get(cursor.parentId) : undefined
+    }
+    const keptPreds = (m.predecessors ?? []).filter(d => !ancestors.has(d.fromId))
+    const offset = m.offsetFromParentMs !== undefined
+      ? m.offsetFromParentMs
+      : anchor ? Math.max(0, Math.round((m.startMs ?? 0) - (anchor.startMs ?? 0))) : undefined
+    const removedDep = keptPreds.length !== (m.predecessors ?? []).length
+    if (offset === undefined && !removedDep) return m
+    changed = true
+    return { ...m, offsetFromParentMs: offset, predecessors: keptPreds }
+  })
+  return changed ? result : modules
+}
+
 /** Bring an upstream (schema 1) project or CSV-derived data up to schema 2. */
 export function migrateProject(input: Partial<ProjectData> & { modules?: ModuleData[] }): ProjectData {
   const base = freshProject()
   const timeConfig = normalizeTimeConfig(input.timeConfig)
   // Recompute display codes from the tree, so legacy T01/T02 projects and
   // imported workbooks immediately gain hierarchy-aware numbering.
-  const modules = renumberHierarchyCodes(normalizeModules(input.modules ?? [], timeConfig))
+  const normalized = renumberHierarchyCodes(normalizeModules(input.modules ?? [], timeConfig))
+  const modules = deriveSubActionOffsets(normalized)
+  // Migrate legacy node-side ownership (ModuleData.resourceId = R) to the new
+  // resource-side ownerNodeId, so old files gain one-to-many support. The node
+  // field is kept as a mirror for older readers.
+  const legacyOwner = new Map<string, string>()
+  for (const m of modules) {
+    if (m.resourceId && !legacyOwner.has(m.resourceId)) legacyOwner.set(m.resourceId, m.id)
+  }
   return {
     ...base,
     ...input,
@@ -107,6 +153,7 @@ export function migrateProject(input: Partial<ProjectData> & { modules?: ModuleD
       color: r.color,
       notes: r.notes,
       parentId: r.parentId,
+      ownerNodeId: r.ownerNodeId ?? legacyOwner.get(r.id ?? ''),
       slotIndex: r.slotIndex === undefined ? undefined : Math.max(0, Math.round(r.slotIndex)),
       motion: r.motion ? normalizeRotaryMotion(r.motion) : undefined
     })),
@@ -116,6 +163,9 @@ export function migrateProject(input: Partial<ProjectData> & { modules?: ModuleD
       resourceId: a.resourceId,
       offsetMs: Math.max(0, Math.round(a.offsetMs || 0)),
       durationMs: Math.max(0, Math.round(a.durationMs || 0)),
+      bindMode: a.bindMode === 'event' ? 'event' as const : undefined,
+      startRef: a.bindMode === 'event' ? quantizeEventRef(a.startRef, timeConfig.precisionMs) : undefined,
+      endRef: a.bindMode === 'event' ? quantizeEventRef(a.endRef, timeConfig.precisionMs) : undefined,
       slotMode: (a.slotMode === 'activeSlot' ? 'activeSlot' : a.slotMode) as ResourceAllocation['slotMode'],
       source: a.source,
       notes: a.notes
@@ -217,6 +267,27 @@ interface CommitState {
 /** A rejected name edit must say why — silent no-ops read like a broken UI. */
 function nameWarning(scope: NameScope, name: string, reason: NameIssueReason): string {
   return formatNameIssue({ scope, id: '', name, reason })
+}
+
+/** Resolved start of the nearest action-like ancestor, or null when none. */
+function nearestActionStart(modules: ModuleData[], id: string): number | null {
+  const byId = new Map(modules.map(m => [m.id, m]))
+  let cursor = byId.get(id)?.parentId
+  const seen = new Set<string>([id])
+  while (cursor && !seen.has(cursor)) {
+    seen.add(cursor)
+    const node = byId.get(cursor)
+    if (!node) return null
+    if (node.kind === 'action' || node.kind === 'subaction') return node.startMs ?? 0
+    cursor = node.parentId
+  }
+  return null
+}
+
+/** Snap an event anchor's fine offset to the project precision. */
+function quantizeEventRef(ref: AllocationEventRef | undefined, precisionMs: number): AllocationEventRef | undefined {
+  if (!ref) return undefined
+  return { ...ref, offsetMs: quantize(ref.offsetMs || 0, precisionMs, 'round') }
 }
 
 /** Recompute the whole schedule and write the resolved values back. */
@@ -364,34 +435,84 @@ export const useProjectStore = create<ProjectState>()(
         const cfg = normalizeTimeConfig(state.project.timeConfig)
         const current = state.project.modules.find(m => m.id === id)
         if (!current) return
+        const isSub = current.kind === 'subaction'
         const start = current.startMs ?? 0
         let durationMs = current.durationMs ?? current.moveCount * current.duration
         if (patch.durationMs !== undefined) {
           durationMs = Math.max(0, quantize(patch.durationMs, cfg.precisionMs, 'round'))
         } else if (patch.endMs !== undefined) {
-          durationMs = Math.max(0, quantize(patch.endMs - start, cfg.precisionMs, 'round'))
+          // Both fields share a coordinate system: relative offset for a
+          // sub-action, absolute ms for an action. duration = end - start in
+          // either case, so subtract the matching authored start.
+          durationMs = isSub
+            ? Math.max(0, quantize(patch.endMs - (current.offsetFromParentMs ?? 0), cfg.precisionMs, 'round'))
+            : Math.max(0, quantize(patch.endMs - start, cfg.precisionMs, 'round'))
         }
         const hasPredecessors = (current.predecessors?.length ?? 0) > 0
         const startMode: StartMode = patch.startMs !== undefined && hasPredecessors
           ? 'manual'
           : (current.startMode ?? 'auto')
-        const startMs = patch.startMs !== undefined
-          ? Math.max(0, quantize(patch.startMs, cfg.precisionMs, 'round'))
-          : start
+
+        // For a sub-action, the authored start field is an offset from the
+        // parent action's resolved start. Store it in offsetFromParentMs and
+        // derive a provisional absolute start for storage/legacy mirrors; the
+        // scheduler re-derives the authoritative start from the live parent.
+        let offsetFromParentMs = current.offsetFromParentMs
+        let startMs: number
+        let anchorMs: number
+        if (isSub) {
+          const parentStart = nearestActionStart(state.project.modules, id)
+          if (patch.startMs !== undefined) {
+            offsetFromParentMs = Math.max(0, quantize(patch.startMs, cfg.precisionMs, 'round'))
+          } else if (offsetFromParentMs === undefined && parentStart !== null) {
+            offsetFromParentMs = Math.max(0, Math.round(start - parentStart))
+          }
+          const off = offsetFromParentMs ?? 0
+          startMs = parentStart === null ? start : parentStart + off
+          anchorMs = parentStart === null ? (current.anchorMs ?? start) : startMs
+        } else {
+          startMs = patch.startMs !== undefined
+            ? Math.max(0, quantize(patch.startMs, cfg.precisionMs, 'round'))
+            : start
+          anchorMs = patch.startMs !== undefined ? startMs : (current.anchorMs ?? current.startMs ?? start)
+        }
+
         const edited = state.project.modules.map(m => m.id === id
           ? {
               ...m,
               startMs,
-              anchorMs: patch.startMs !== undefined ? startMs : (m.anchorMs ?? m.startMs),
+              anchorMs,
               durationMs,
-              startMode
+              startMode,
+              offsetFromParentMs
             }
           : m)
-        // Grow action/sub-action ancestors so they still contain the edited
-        // subtree, then commit once with both changes applied.
-        const expanded = autoExpandParentTimes(edited, id, cfg.precisionMs)
-        changes = expanded.changes
-        commit(state, expanded.modules)
+        // The scheduler is now the single source of truth for containment:
+        // after offset propagation it grows every action/sub-action ancestor
+        // to cover its sub-tree (Pass 1.6). We do NOT pre-write ancestor times
+        // here — doing so with cached child times pulls an edited parent start
+        // backwards. Instead, preview the resolved schedule purely to build an
+        // accurate "parent extended" notice, then commit the authored edit.
+        const before = new Map(state.project.modules.map(m => [m.id, m]))
+        const preview = computeSchedule(edited, cfg)
+        changes = preview.tasks
+          .filter(t => !t.isSummary && t.parentId)
+          .flatMap(t => {
+            const old = before.get(t.id)
+            if (!old || (old.kind !== 'action' && old.kind !== 'subaction')) return []
+            const oldStart = old.startMs ?? 0
+            const oldEnd = oldStart + (old.durationMs ?? 0)
+            if (t.endMs <= oldEnd) return []
+            return [{
+              id: t.id,
+              name: old.actionDescription || old.moduleName || old.code || old.id,
+              oldStartMs: oldStart,
+              oldEndMs: oldEnd,
+              newStartMs: t.startMs,
+              newEndMs: t.endMs
+            }]
+          })
+        commit(state, edited)
       })
       return changes
     },
@@ -544,6 +665,21 @@ export const useProjectStore = create<ProjectState>()(
       color = color ?? MODULE_COLORS[new Set(working.map(m => m.moduleName)).size % MODULE_COLORS.length]
 
       const startMs = Math.max(0, quantize(options?.startMs ?? parent?.startMs ?? 0, cfg.precisionMs, 'round'))
+      // A sub-action's start is relative to its nearest action-like ancestor.
+      // Summary parents (module/mechanism) are skipped; nested sub-actions
+      // chain through their own parent's resolved start.
+      let offsetFromParentMs: number | undefined
+      if (kind === 'subaction') {
+        let base = parent
+        const baseGuard = new Set<string>()
+        while (base && (base.kind === 'module' || base.kind === 'mechanism') && !baseGuard.has(base.id)) {
+          baseGuard.add(base.id)
+          base = base.parentId ? working.find(m => m.id === base!.parentId) : undefined
+        }
+        if (base && (base.kind === 'action' || base.kind === 'subaction')) {
+          offsetFromParentMs = Math.max(0, Math.round(startMs - (base.startMs ?? 0)))
+        }
+      }
       const durationMs = isSummary ? 0 : quantize(options?.durationMs ?? cfg.scaleMs * 10, cfg.precisionMs, 'ceil')
       const displayName = options?.actionDescription
         ?? (kind === 'module' ? '新模块' : kind === 'mechanism' ? '新机构' : kind === 'subaction' ? '新子动作' : '新动作')
@@ -575,6 +711,7 @@ export const useProjectStore = create<ProjectState>()(
         durationMs,
         endMs: startMs + durationMs,
         startMode: 'auto',
+        offsetFromParentMs,
         predecessors: [],
         startX: startMs / cfg.scaleMs,
         calculatedStartX: startMs / cfg.scaleMs,
@@ -604,8 +741,14 @@ export const useProjectStore = create<ProjectState>()(
           predecessors: (m.predecessors ?? []).filter(d => !removed.has(d.fromId))
         }))
       commit(state, next as ModuleData[])
-      // Drop every allocation that referenced a deleted action/subaction.
-      state.project.allocations = state.project.allocations.filter(a => !removed.has(a.taskId))
+      // Drop every allocation that referenced a deleted action/subaction —
+      // either as its owner or as an event anchor. A bound claim whose start
+      // or release action was removed can no longer be placed, so it goes too.
+      state.project.allocations = state.project.allocations.filter(a =>
+        !removed.has(a.taskId)
+        && !removed.has(a.startRef?.taskId ?? '')
+        && !removed.has(a.endRef?.taskId ?? '')
+      )
       state.unsavedChanges = true
     }),
 
@@ -706,6 +849,7 @@ export const useProjectStore = create<ProjectState>()(
           color: resource?.color,
           notes: resource?.notes,
           parentId: resource?.parentId,
+          ownerNodeId: resource?.ownerNodeId,
           slotIndex: resource?.slotIndex,
           motion: resource?.motion ? normalizeRotaryMotion(resource.motion) : undefined
         })
@@ -761,7 +905,14 @@ export const useProjectStore = create<ProjectState>()(
     linkMechanismResource: (moduleId, resourceId) => set(state => {
       if (!state.project) return
       const node = state.project.modules.find(m => m.id === moduleId)
-      if (!node || node.kind !== 'mechanism') return
+      if (!node || (node.kind !== 'mechanism' && node.kind !== 'module')) return
+      // If the chosen resource belonged to another node, detach it there.
+      if (resourceId) {
+        for (const r of state.project.resources) {
+          if (r.id === resourceId) r.ownerNodeId = moduleId
+        }
+      }
+      // Legacy mirror kept for old readers; main index now uses ownerNodeId.
       node.resourceId = resourceId ?? undefined
       state.project.updatedAt = new Date().toISOString()
       state.unsavedChanges = true
@@ -769,17 +920,12 @@ export const useProjectStore = create<ProjectState>()(
 
     setResourceOwner: (resourceId, targetId) => set(state => {
       if (!state.project) return
-      // A resource lives under a single node in the centred view. Clear every
-      // other node (module or mechanism) that binds it, then bind the target.
-      for (const m of state.project.modules) {
-        if (m.resourceId === resourceId && m.id !== targetId) m.resourceId = undefined
-      }
-      if (targetId) {
-        const target = state.project.modules.find(m => m.id === targetId)
-        if (target && (target.kind === 'mechanism' || target.kind === 'module')) {
-          target.resourceId = resourceId
-        }
-      }
+      const resource = state.project.resources.find(r => r.id === resourceId)
+      if (!resource) return
+      // Ownership lives on the RESOURCE side so one node can own MANY
+      // resources (a mechanism may expose a gripper and a needle at once).
+      // Only this resource changes; siblings on the same node are untouched.
+      resource.ownerNodeId = targetId || undefined
       state.project.updatedAt = new Date().toISOString()
       state.unsavedChanges = true
     }),
@@ -824,9 +970,18 @@ export const useProjectStore = create<ProjectState>()(
     addAllocation: allocation => {
       const project = get().project
       if (!project) return null
-      if (allocation.durationMs <= 0) return null
       if (!project.modules.some(m => m.id === allocation.taskId)) return null
       if (!project.resources.some(r => r.id === allocation.resourceId)) return null
+      const isEvent = allocation.bindMode === 'event'
+      if (isEvent) {
+        // A bound claim needs both anchors pointing at real, still-existing
+        // actions; durationMs is irrelevant in this mode and may be 0.
+        const ids = new Set(project.modules.map(m => m.id))
+        if (!allocation.startRef || !allocation.endRef) return null
+        if (!ids.has(allocation.startRef.taskId) || !ids.has(allocation.endRef.taskId)) return null
+      } else if (allocation.durationMs <= 0) {
+        return null
+      }
       const id = uuidv4()
       set(state => {
         if (!state.project) return
@@ -834,8 +989,11 @@ export const useProjectStore = create<ProjectState>()(
         state.project.allocations.push({
           ...allocation,
           id,
-          offsetMs: Math.max(0, quantize(allocation.offsetMs, cfg.precisionMs, 'round')),
-          durationMs: Math.max(0, quantize(allocation.durationMs, cfg.precisionMs, 'round'))
+          offsetMs: Math.max(0, quantize(allocation.offsetMs || 0, cfg.precisionMs, 'round')),
+          durationMs: Math.max(0, quantize(allocation.durationMs || 0, cfg.precisionMs, 'round')),
+          bindMode: isEvent ? 'event' : 'manual',
+          startRef: isEvent ? quantizeEventRef(allocation.startRef, cfg.precisionMs) : undefined,
+          endRef: isEvent ? quantizeEventRef(allocation.endRef, cfg.precisionMs) : undefined
         })
         state.project.updatedAt = new Date().toISOString()
         state.unsavedChanges = true
@@ -852,6 +1010,9 @@ export const useProjectStore = create<ProjectState>()(
       if (patch.durationMs !== undefined) a.durationMs = Math.max(0, quantize(patch.durationMs, cfg.precisionMs, 'round'))
       if (patch.resourceId !== undefined) a.resourceId = patch.resourceId
       if (patch.notes !== undefined) a.notes = patch.notes
+      if (patch.bindMode !== undefined) a.bindMode = patch.bindMode
+      if (patch.startRef !== undefined) a.startRef = quantizeEventRef(patch.startRef, cfg.precisionMs)
+      if (patch.endRef !== undefined) a.endRef = quantizeEventRef(patch.endRef, cfg.precisionMs)
       state.project.updatedAt = new Date().toISOString()
       state.unsavedChanges = true
     }),

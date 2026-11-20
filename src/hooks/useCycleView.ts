@@ -56,8 +56,8 @@ export function useCycleView() {
   // binding into a module → mechanism → resource tree. Built from the template
   // (not the projection) so ids and names are cycle-independent.
   const resourceOwners = useMemo(
-    () => buildResourceOwnerIndex(modules ?? []),
-    [modules]
+    () => buildResourceOwnerIndex(modules ?? [], resources ?? []),
+    [modules, resources]
   )
 
   // Occupation comes ONLY from claims explicitly authored on actions in the

@@ -255,6 +255,42 @@ describe('Gantt ⇄ Excel', () => {
     expect(a2.durationMs).toBe(400)
   })
 
+  it('round-trips ownerNodeId so one mechanism can own several resources', async () => {
+    const project = fixture()
+    project.resources = [
+      { id: 'GRIP', name: '抓手', ownerNodeId: 'K' },
+      { id: 'NEEDLE', name: '加样针', ownerNodeId: 'K' }
+    ]
+    const schedule = computeSchedule(project.modules, CONFIG)
+    const rows = flattenTree(schedule)
+    const blob = await buildGanttWorkbook({ project, schedule, rows, layout: project.excelLayout })
+    const result = await importGanttWorkbook(new File([await blob.arrayBuffer()], 'owners.xlsx'))
+    expect(result.success).toBe(true)
+    expect(result.resources!.find(r => r.id === 'GRIP')!.ownerNodeId).toBe('K')
+    expect(result.resources!.find(r => r.id === 'NEEDLE')!.ownerNodeId).toBe('K')
+  })
+
+  it('round-trips event-bound claims with their action anchors', async () => {
+    const project = fixture()
+    project.resources = [{ id: 'GRIP', name: '管库抓手' }]
+    project.allocations = [{
+      id: 'bound', taskId: 'A', resourceId: 'GRIP', offsetMs: 0, durationMs: 0,
+      bindMode: 'event',
+      startRef: { taskId: 'A', at: 'start', offsetMs: 0 },
+      endRef: { taskId: 'B', at: 'end', offsetMs: 25 }
+    }]
+    const schedule = computeSchedule(project.modules, CONFIG)
+    const rows = flattenTree(schedule)
+    const blob = await buildGanttWorkbook({ project, schedule, rows, layout: project.excelLayout })
+    const result = await importGanttWorkbook(new File([await blob.arrayBuffer()], 'bound.xlsx'))
+    expect(result.success).toBe(true)
+    const bound = result.allocations!.find(a => a.id === 'bound')!
+    expect(bound.bindMode).toBe('event')
+    expect(bound.startRef).toEqual({ taskId: 'A', at: 'start', offsetMs: 0 })
+    expect(bound.endRef).toEqual({ taskId: 'B', at: 'end', offsetMs: 25 })
+    expect(bound.durationMs).toBe(0)
+  })
+
   it('round-trips resource tree, rotary motion and activeSlot claims', async () => {
     const project = fixture()
     project.modules[1] = { ...project.modules[1], resourceId: 'PLATE' }
@@ -284,5 +320,20 @@ describe('Gantt ⇄ Excel', () => {
     const step = matrixStep(600_000, CONFIG, layout)
     expect(step % CONFIG.scaleMs).toBe(0)
     expect(Math.ceil(600_000 / step)).toBeLessThanOrEqual(180)
+  })
+
+  it('round-trips a sub-action offsetFromParentMs', async () => {
+    const project = fixture()
+    project.modules = project.modules.map(m => m.id === 'S'
+      ? { ...m, offsetFromParentMs: 120 }
+      : m)
+    const schedule = computeSchedule(project.modules, CONFIG)
+    const blob = await buildGanttWorkbook({
+      project, schedule, rows: flattenTree(schedule), layout: project.excelLayout
+    })
+    const result = await importGanttWorkbook(new File([await blob.arrayBuffer()], 'offset.xlsx'))
+    expect(result.success).toBe(true)
+    expect(result.modules!.find(m => m.id === 'S')!.offsetFromParentMs).toBe(120)
+    expect(result.modules!.find(m => m.id === 'A')!.offsetFromParentMs).toBeUndefined()
   })
 })

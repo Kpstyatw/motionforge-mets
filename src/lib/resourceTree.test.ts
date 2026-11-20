@@ -167,6 +167,35 @@ describe('resource ownership (reverse from mechanism bindings)', () => {
     expect(owners.has('H0')).toBe(false) // slot has no direct binding
   })
 
+  it('lets one mechanism own several resources via ownerNodeId', () => {
+    const modules: ModuleData[] = [
+      node('M', 'module', null, 0, 0),
+      { ...node('K', 'mechanism', 'M', 0, 0), moduleName: '加样机构' }
+    ]
+    const resources: Resource[] = [
+      { id: 'GRIP', name: '抓手', ownerNodeId: 'K' },
+      { id: 'NEEDLE', name: '加样针', ownerNodeId: 'K' },
+      { id: 'LOOSE', name: '未归属' }
+    ]
+    const owners = buildResourceOwnerIndex(modules, resources)
+    expect(owners.get('GRIP')?.mechanismId).toBe('K')
+    expect(owners.get('NEEDLE')?.mechanismId).toBe('K')
+    expect(owners.get('GRIP')?.mechanismName).toBe('加样机构')
+    expect(owners.has('LOOSE')).toBe(false)
+    expect(owners.size).toBe(2)
+  })
+
+  it('prefers resource-side owner over legacy node binding', () => {
+    const modules: ModuleData[] = [
+      node('M', 'module', null, 0, 0),
+      { ...node('K1', 'mechanism', 'M', 0, 0, 'GRIP'), moduleName: '旧机构' },
+      { ...node('K2', 'mechanism', 'M', 0, 0), moduleName: '新机构' }
+    ]
+    const resources: Resource[] = [{ id: 'GRIP', name: '抓手', ownerNodeId: 'K2' }]
+    const owners = buildResourceOwnerIndex(modules, resources)
+    expect(owners.get('GRIP')?.mechanismName).toBe('新机构')
+  })
+
   it('keeps the first binding when two mechanisms claim one resource', () => {
     const modules: ModuleData[] = [
       node('M1', 'module', null, 0, 0),

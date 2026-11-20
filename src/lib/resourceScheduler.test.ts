@@ -155,4 +155,106 @@ describe('Resource scheduler', () => {
     expect(clampAllocationWindow(800, 500, 1000, 1)).toEqual({ offsetMs: 800, durationMs: 200 })
     expect(clampAllocationWindow(-50, 2000, 1000, 1)).toEqual({ offsetMs: 0, durationMs: 1000 })
   })
+
+  it('anchors a claim to two different action events (grip start → inject end)', () => {
+    const modules = [
+      node('M', 'module', null, 0, 0),
+      node('K', 'mechanism', 'M', 0, 0),
+      node('A', 'action', 'K', 1000, 500),      // 抓取 1000–1500
+      node('B', 'action', 'K', 1500, 500),      // 移送 1500–2000
+      node('C', 'action', 'K', 2000, 1500)      // 加样 2000–3500
+    ]
+    const bound: ResourceAllocation = {
+      ...alloc('bound', 'A', 'GRIP', 0, 0),
+      bindMode: 'event',
+      startRef: { taskId: 'A', at: 'start', offsetMs: 0 },
+      endRef: { taskId: 'C', at: 'end', offsetMs: 0 }
+    }
+    const rs = computeResourceSchedule(computeSchedule(modules, CONFIG), [bound], RESOURCES)
+    expect(rs.placed).toHaveLength(1)
+    expect(rs.placed[0].startMs).toBe(1000)
+    expect(rs.placed[0].endMs).toBe(3500)
+    expect(rs.warnings).toHaveLength(0)
+  })
+
+  it('follows cascades and honours fine offsets on both events', () => {
+    const modules = [
+      node('M', 'module', null, 0, 0),
+      node('K', 'mechanism', 'M', 0, 0),
+      node('A', 'action', 'K', 1000, 500),
+      node('C', 'action', 'K', 5000, 1500)
+    ]
+    const bound: ResourceAllocation = {
+      ...alloc('bound', 'A', 'GRIP', 0, 0),
+      bindMode: 'event',
+      startRef: { taskId: 'A', at: 'end', offsetMs: 100 },   // A 结束后 100 → 1600
+      endRef: { taskId: 'C', at: 'end', offsetMs: -50 }      // C 结束前 50 → 6450
+    }
+    const before = computeResourceSchedule(computeSchedule(modules, CONFIG), [bound], RESOURCES)
+    expect([before.placed[0].startMs, before.placed[0].endMs]).toEqual([1600, 6450])
+
+    // Push A later by 2000 ms; the start event follows while the release stays.
+    const changed = modules.map(m => m.id === 'A' ? { ...m, anchorMs: 3000, startMs: 3000 } : m)
+    const after = computeResourceSchedule(computeSchedule(changed, CONFIG), [bound], RESOURCES)
+    expect([after.placed[0].startMs, after.placed[0].endMs]).toEqual([3600, 6450])
+  })
+
+  it('degrades an inverted event window with a warning', () => {
+    const modules = [
+      node('M', 'module', null, 0, 0),
+      node('K', 'mechanism', 'M', 0, 0),
+      node('A', 'action', 'K', 1000, 500),
+      node('C', 'action', 'K', 2000, 500)
+    ]
+    const inverted: ResourceAllocation = {
+      ...alloc('bad', 'A', 'GRIP', 0, 0),
+      bindMode: 'event',
+      startRef: { taskId: 'C', at: 'start' },   // 2000
+      endRef: { taskId: 'A', at: 'start' }      // 1000 → earlier
+    }
+    const rs = computeResourceSchedule(computeSchedule(modules, CONFIG), [inverted], RESOURCES)
+    expect(rs.placed).toHaveLength(0)
+    expect(rs.warnings.length).toBeGreaterThan(0)
+  })
+
+  it('drops a bound claim whose referenced action was deleted', () => {
+    const modules = [
+      node('M', 'module', null, 0, 0),
+      node('K', 'mechanism', 'M', 0, 0),
+      node('A', 'action', 'K', 1000, 500)
+    ]
+    const bound: ResourceAllocation = {
+      ...alloc('bound', 'A', 'GRIP', 0, 0),
+      bindMode: 'event',
+      startRef: { taskId: 'A', at: 'start' },
+      endRef: { taskId: 'DELETED', at: 'end' }
+    }
+    const warnings: string[] = []
+    const placed = placeAllocations(computeSchedule(modules, CONFIG), [bound], RESOURCES, warnings)
+    expect(placed).toHaveLength(0)
+    expect(warnings.length).toBeGreaterThan(0)
+  })
+
+  it('still detects conflicts between bound and manual claims on the same resource', () => {
+    const modules = [
+      node('M', 'module', null, 0, 0),
+      node('K', 'mechanism', 'M', 0, 0),
+      node('A', 'action', 'K', 1000, 1000),
+      node('B', 'action', 'K', 1500, 1000)
+    ]
+    const bound: ResourceAllocation = {
+      ...alloc('bound', 'A', 'GRIP', 0, 0),
+      bindMode: 'event',
+      startRef: { taskId: 'A', at: 'start' },
+      endRef: { taskId: 'A', at: 'end' }
+    }
+    const rs = computeResourceSchedule(
+      computeSchedule(modules, CONFIG),
+      [bound, alloc('manual', 'B', 'GRIP', 0, 1000)],
+      RESOURCES
+    )
+    expect(rs.conflicts).toHaveLength(1)
+    expect(rs.conflicts[0].overlapStartMs).toBe(1500)
+    expect(rs.conflicts[0].overlapEndMs).toBe(2000)
+  })
 })

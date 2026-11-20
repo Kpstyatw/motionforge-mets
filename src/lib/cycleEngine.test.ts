@@ -142,4 +142,26 @@ describe('cycle projection', () => {
     )
     expect(view.warnings.some(w => w.includes('超出周期'))).toBe(true)
   })
+
+  it('maps event anchors to cycle instances and folds them back to templates', () => {
+    const { modules } = fixture()
+    const bound: ResourceAllocation = {
+      id: 'bound', taskId: 'A', resourceId: 'GRIP', offsetMs: 0, durationMs: 0,
+      bindMode: 'event',
+      startRef: { taskId: 'A', at: 'start', offsetMs: 0 },
+      endRef: { taskId: 'B', at: 'end', offsetMs: 50 }
+    }
+    const view = expandCycles(modules, [bound], CYCLE)
+    expect(view.allocations).toHaveLength(3)
+    view.allocations.forEach((a, i) => {
+      const cycle = i + 1
+      expect(a.taskId).toBe(instanceId('A', cycle))
+      expect(a.startRef?.taskId).toBe(instanceId('A', cycle))
+      expect(a.endRef?.taskId).toBe(instanceId('B', cycle))
+    })
+    const folded = collapseCycleProjection(view.modules, view.allocations)
+    expect(folded.allocations).toHaveLength(1)
+    expect(folded.allocations[0].startRef?.taskId).toBe('A')
+    expect(folded.allocations[0].endRef?.taskId).toBe('B')
+  })
 })

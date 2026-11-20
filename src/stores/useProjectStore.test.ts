@@ -263,26 +263,46 @@ describe('setResourceOwner — reverse ownership from the resource side', () => 
     } as never)
   }
 
+  const ownersNow = () => {
+    const p = useProjectStore.getState().project!
+    return buildResourceOwnerIndex(p.modules, p.resources)
+  }
+
   it('binds a resource to a mechanism so the owner index finds module/mechanism', () => {
     loadWithMechanisms()
     useProjectStore.getState().setResourceOwner('R1', 'MECH1')
-    const owners = buildResourceOwnerIndex(useProjectStore.getState().project!.modules)
-    expect(owners.get('R1')?.mechanismId).toBe('MECH1')
-    expect(owners.get('R1')?.moduleName).toBe('进样')
-    expect(owners.get('R1')?.mechanismName).toBe('取血针')
+    expect(ownersNow().get('R1')?.mechanismId).toBe('MECH1')
+    expect(ownersNow().get('R1')?.moduleName).toBe('进样')
+    expect(ownersNow().get('R1')?.mechanismName).toBe('取血针')
+    expect(useProjectStore.getState().project!.resources[0].ownerNodeId).toBe('MECH1')
   })
 
-  it('moves ownership 1:1 — rebinding clears the previous mechanism', () => {
+  it('moves one resource 1:1 — rebinding clears its previous mechanism', () => {
     loadWithMechanisms()
     const s = useProjectStore.getState()
     s.setResourceOwner('R1', 'MECH1')
     s.setResourceOwner('R1', 'MECH2')
-    const mods = useProjectStore.getState().project!.modules
-    expect(mods.find(m => m.id === 'MECH1')!.resourceId).toBeUndefined()
-    expect(mods.find(m => m.id === 'MECH2')!.resourceId).toBe('R1')
-    const owners = buildResourceOwnerIndex(mods)
+    const owners = ownersNow()
     expect(owners.size).toBe(1)
     expect(owners.get('R1')?.mechanismId).toBe('MECH2')
+    expect(useProjectStore.getState().project!.resources[0].ownerNodeId).toBe('MECH2')
+  })
+
+  it('lets ONE mechanism own SEVERAL resources without mutual exclusion', () => {
+    loadWithMechanisms()
+    const s = useProjectStore.getState()
+    // Add a second resource, then assign both to the SAME mechanism.
+    const r2 = s.addResource({ name: '取样针电机' })
+    expect(r2).toBeTruthy()
+    s.setResourceOwner('R1', 'MECH1')
+    s.setResourceOwner(r2, 'MECH1')
+    const p = useProjectStore.getState().project!
+    expect(p.resources.find(r => r.id === 'R1')!.ownerNodeId).toBe('MECH1')
+    expect(p.resources.find(r => r.id === r2)!.ownerNodeId).toBe('MECH1')
+    const owners = buildResourceOwnerIndex(p.modules, p.resources)
+    expect(owners.get('R1')?.mechanismId).toBe('MECH1')
+    expect(owners.get(r2)?.mechanismId).toBe('MECH1')
+    expect(owners.size).toBe(2)
   })
 
   it('unbinds with null', () => {
@@ -290,27 +310,14 @@ describe('setResourceOwner — reverse ownership from the resource side', () => 
     const s = useProjectStore.getState()
     s.setResourceOwner('R1', 'MECH1')
     s.setResourceOwner('R1', null)
-    expect(buildResourceOwnerIndex(useProjectStore.getState().project!.modules).has('R1')).toBe(false)
+    expect(ownersNow().has('R1')).toBe(false)
   })
 
   it('allows a module (not just a mechanism) as the owner', () => {
     loadWithMechanisms()
     useProjectStore.getState().setResourceOwner('R1', 'M1')
-    const owners = buildResourceOwnerIndex(useProjectStore.getState().project!.modules)
-    expect(owners.get('R1')?.moduleId).toBe('M1')
-    expect(owners.get('R1')?.moduleName).toBe('进样')
-    expect(owners.get('R1')?.mechanismId).toBe('')
-  })
-
-  it('moves ownership between a mechanism and a module without duplicates', () => {
-    loadWithMechanisms()
-    const s = useProjectStore.getState()
-    s.setResourceOwner('R1', 'MECH1')
-    s.setResourceOwner('R1', 'M1')
-    const mods = useProjectStore.getState().project!.modules
-    expect(mods.find(m => m.id === 'MECH1')!.resourceId).toBeUndefined()
-    expect(mods.find(m => m.id === 'M1')!.resourceId).toBe('R1')
-    expect(buildResourceOwnerIndex(mods).size).toBe(1)
+    expect(ownersNow().get('R1')?.moduleId).toBe('M1')
+    expect(ownersNow().get('R1')?.mechanismId).toBe('')
   })
 
   it('addAction creates a node in the flow tree that can own a resource', () => {
@@ -319,9 +326,107 @@ describe('setResourceOwner — reverse ownership from the resource side', () => 
     const newId = s.addAction({ kind: 'mechanism', parentId: 'M1', moduleName: '加样针', actionDescription: '加样针' })
     expect(newId).toBeTruthy()
     useProjectStore.getState().setResourceOwner('R1', newId!)
-    const mods = useProjectStore.getState().project!.modules
-    // The node is in the flow tree (so the flow chart shows it) and owns the resource.
-    expect(mods.some(m => m.id === newId && m.kind === 'mechanism' && m.parentId === 'M1')).toBe(true)
-    expect(buildResourceOwnerIndex(mods).get('R1')?.mechanismName).toBe('加样针')
+    const p = useProjectStore.getState().project!
+    expect(p.modules.some(m => m.id === newId && m.kind === 'mechanism' && m.parentId === 'M1')).toBe(true)
+    expect(buildResourceOwnerIndex(p.modules, p.resources).get('R1')?.mechanismName).toBe('加样针')
+  })
+})
+
+describe('event-bound allocations', () => {
+  function loadWithResource() {
+    useProjectStore.getState().loadProject({
+      name: 't', modules: [mk('A', 1000, 500), mk('B', 5000, 500), mk('C', 8000, 500)],
+      resources: [{ id: 'GRIP', name: '抓手' }],
+      allocations: [],
+      timeConfig: { scaleMs: 100, precisionMs: 1, displayUnit: 'ms' }
+    } as never)
+  }
+
+  it('rejects a bound claim whose event actions do not exist', () => {
+    loadWithResource()
+    const id = useProjectStore.getState().addAllocation({
+      taskId: 'A', resourceId: 'GRIP', offsetMs: 0, durationMs: 0,
+      bindMode: 'event',
+      startRef: { taskId: 'A', at: 'start' },
+      endRef: { taskId: 'MISSING', at: 'end' }
+    })
+    expect(id).toBeNull()
+    expect(useProjectStore.getState().project!.allocations).toHaveLength(0)
+  })
+
+  it('persists a valid bound claim and drops it when a referenced action is deleted', () => {
+    loadWithResource()
+    const id = useProjectStore.getState().addAllocation({
+      taskId: 'A', resourceId: 'GRIP', offsetMs: 0, durationMs: 0,
+      bindMode: 'event',
+      startRef: { taskId: 'A', at: 'start', offsetMs: 10 },
+      endRef: { taskId: 'C', at: 'end', offsetMs: -5 }
+    })
+    expect(id).toBeTruthy()
+    let a = useProjectStore.getState().project!.allocations[0]
+    expect(a.bindMode).toBe('event')
+    expect(a.startRef).toEqual({ taskId: 'A', at: 'start', offsetMs: 10 })
+    expect(a.endRef).toEqual({ taskId: 'C', at: 'end', offsetMs: -5 })
+
+    // Deleting the release action removes the now-unplaceable claim.
+    useProjectStore.getState().deleteTask('C')
+    expect(useProjectStore.getState().project!.allocations).toHaveLength(0)
+  })
+
+  it('keeps a bound claim when an unrelated action is deleted', () => {
+    loadWithResource()
+    useProjectStore.getState().addAllocation({
+      taskId: 'A', resourceId: 'GRIP', offsetMs: 0, durationMs: 0,
+      bindMode: 'event',
+      startRef: { taskId: 'A', at: 'start' },
+      endRef: { taskId: 'C', at: 'end' }
+    })
+    useProjectStore.getState().deleteTask('B')
+    expect(useProjectStore.getState().project!.allocations).toHaveLength(1)
+  })
+})
+
+describe('sub-action relative time model', () => {
+  function tree(withLegacyDep = false): ModuleData[] {
+    const a = mk('A', 1000, 800)
+    const s = {
+      ...mk('S', 1200, 300, withLegacyDep
+        ? [{ id: 'legacy', fromId: 'A', type: 'FS', lagMs: 0 }]
+        : []),
+      kind: 'subaction' as TaskKind, parentId: 'A'
+    }
+    return [a, s]
+  }
+
+  it('migrates a legacy sub-action into a relative offset and drops its ancestor dependency', () => {
+    load(tree(true))
+    const p = useProjectStore.getState().project!
+    const s = p.modules.find(m => m.id === 'S')!
+    expect(s.offsetFromParentMs).toBe(200) // 1200 - 1000
+    expect(s.predecessors ?? []).toHaveLength(0) // legacy FS-to-parent removed
+    expect(schedule().byId.S.startMs).toBe(1200)
+  })
+
+  it('writes a sub-action start edit as an offset relative to its parent', () => {
+    load(tree())
+    useProjectStore.getState().setTaskTiming('S', { startMs: 500 })
+    const s = useProjectStore.getState().project!.modules.find(m => m.id === 'S')!
+    expect(s.offsetFromParentMs).toBe(500)
+    expect(schedule().byId.S.startMs).toBe(1500) // A start 1000 + 500
+  })
+
+  it('drags a sub-action along when only its parent action moves', () => {
+    load(tree())
+    expect(schedule().byId.S.startMs).toBe(1200)
+    useProjectStore.getState().setTaskTiming('A', { startMs: 3000 })
+    expect(schedule().byId.S.startMs).toBe(3200) // 3000 + 200
+  })
+
+  it('grows the parent action to contain an overshooting sub-action', () => {
+    load(tree())
+    useProjectStore.getState().setTaskTiming('S', { durationMs: 2000 })
+    const s = schedule()
+    expect(s.byId.S.endMs).toBe(3200) // 1000 + 200 + 2000
+    expect(s.byId.A.endMs).toBeGreaterThanOrEqual(s.byId.S.endMs)
   })
 })

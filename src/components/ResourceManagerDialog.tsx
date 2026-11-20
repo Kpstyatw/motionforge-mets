@@ -100,7 +100,7 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
 
   // Reverse index: resource id → owning flow node, derived the same way as
   // the resource-lane view, so the dropdown always mirrors what the chart shows.
-  const ownerIndex = buildResourceOwnerIndex(project.modules)
+  const ownerIndex = buildResourceOwnerIndex(project.modules, project.resources)
   const moduleById = new Map(project.modules.map(m => [m.id, m]))
   const nodeName = (m: { moduleName?: string; actionDescription?: string; code?: string; id: string }) =>
     m.moduleName || m.actionDescription || m.code || m.id

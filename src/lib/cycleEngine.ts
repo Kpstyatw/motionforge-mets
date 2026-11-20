@@ -167,10 +167,16 @@ export function expandCycles(
 
     for (const a of allocations) {
       if (!templateIds.has(a.taskId)) continue
+      const mapRef = (ref: typeof a.startRef) => ref && {
+        ...ref,
+        taskId: templateIds.has(ref.taskId) ? instanceId(ref.taskId, cycle) : ref.taskId
+      }
       expandedAllocations.push({
         ...a,
         id: `${a.id}@C${cycle}`,
         taskId: instanceId(a.taskId, cycle),
+        startRef: mapRef(a.startRef),
+        endRef: mapRef(a.endRef),
         notes: a.notes
       })
     }
@@ -216,7 +222,13 @@ export function collapseCycleProjection(
   const keptIds = new Set(stripped.map(m => m.id))
   const templateAllocations = allocations
     .filter(a => cycleIndexOf(a.id) <= 1 && cycleIndexOf(a.taskId) <= 1)
-    .map(a => ({ ...a, id: templateIdOf(a.id), taskId: templateIdOf(a.taskId) }))
+    .map(a => ({
+      ...a,
+      id: templateIdOf(a.id),
+      taskId: templateIdOf(a.taskId),
+      startRef: a.startRef ? { ...a.startRef, taskId: templateIdOf(a.startRef.taskId) } : undefined,
+      endRef: a.endRef ? { ...a.endRef, taskId: templateIdOf(a.endRef.taskId) } : undefined
+    }))
     .filter(a => keptIds.has(a.taskId))
   return {
     modules: stripped,

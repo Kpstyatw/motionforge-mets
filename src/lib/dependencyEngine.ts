@@ -449,6 +449,72 @@ export function computeSchedule(
     })
   })
 
+  // Pass 1.5 — hierarchical offset propagation (parent → child).
+  // A sub-action carrying `offsetFromParentMs` does not use its own absolute
+  // anchor: its start is the nearest action-like ancestor's resolved start plus
+  // that offset. Because we resolve ancestors first, nested sub-actions chain
+  // naturally. Moving the parent (manual edit OR dependency cascade) therefore
+  // drags the whole sub-tree along. A predecessor constraint remains a hard
+  // lower bound, so an offset can never place a sub-action before its required
+  // predecessors.
+  const rowById = new Map(rows.map(m => [m.id, m]))
+
+  const ancestorActionStart = (id: string): number | null => {
+    let cursor = rowById.get(id)?.parentId
+    const seen = new Set<string>([id])
+    while (cursor && !seen.has(cursor)) {
+      seen.add(cursor)
+      const node = rowById.get(cursor)
+      if (!node) return null
+      if (node.kind === 'action' || node.kind === 'subaction') {
+        const ancestor = leafResult.get(node.id)
+        return ancestor ? ancestor.startMs : null
+      }
+      cursor = node.parentId
+    }
+    return null
+  }
+
+  const offsetRows = rows
+    .filter(m => leafIds.has(m.id) && m.offsetFromParentMs !== undefined)
+    .sort((a, b) => depthOf(a, rowById) - depthOf(b, rowById))
+  offsetRows.forEach(m => {
+    const result = leafResult.get(m.id)
+    const parentStart = ancestorActionStart(m.id)
+    if (!result || parentStart === null) return
+    const base = parentStart + Math.round(m.offsetFromParentMs ?? 0)
+    const startMs = result.constraintMs === null ? base : Math.max(base, result.constraintMs)
+    const resolved = Math.max(0, startMs)
+    result.clamped = result.clamped || (result.constraintMs !== null && result.constraintMs > base)
+    result.startMs = resolved
+  })
+
+  // Pass 1.6 — action window containment (child → parent).
+  // An action/sub-action that owns child sub-actions grows its duration just
+  // enough to contain the whole sub-tree's final bounds. This runs AFTER offset
+  // propagation and AFTER dependency constraints, so a parent that is `auto`
+  // and has predecessors can no longer be pulled back and leave a child
+  // sticking out. Fixed periods / roll-up rows are unaffected.
+  const subtreeEnd = (id: string, seen = new Set<string>()): number => {
+    if (seen.has(id)) return 0
+    seen.add(id)
+    const own = leafResult.get(id)
+    let end = own ? own.startMs + own.durationMs : 0
+    ;(childMap.get(id) ?? []).forEach(child => { end = Math.max(end, subtreeEnd(child, seen)) })
+    return end
+  }
+  const containingRows = rows
+    .filter(m => leafIds.has(m.id) && (childMap.get(m.id)?.length ?? 0) > 0)
+    .sort((a, b) => depthOf(b, rowById) - depthOf(a, rowById)) // deepest first: nested containment composes
+  containingRows.forEach(m => {
+    const result = leafResult.get(m.id)
+    if (!result) return
+    let maxEnd = result.startMs + result.durationMs
+    ;(childMap.get(m.id) ?? []).forEach(child => { maxEnd = Math.max(maxEnd, subtreeEnd(child)) })
+    const grown = Math.max(0, quantize(maxEnd - result.startMs, config.precisionMs, 'ceil'))
+    if (grown > result.durationMs) result.durationMs = grown
+  })
+
   // Pass 2 — roll descendant task bounds up through the hierarchy.
   const rollup = new Map<string, { startMs: number; endMs: number }>()
   const rollupOf = (id: string, guard = new Set<string>()): { startMs: number; endMs: number } => {

@@ -4,7 +4,7 @@ import {
   Resource, ResourceAllocation, TaskKind, TimeConfig
 } from '@/types'
 import { ScheduleResult, TreeRow, parsePredecessors } from '@/lib/dependencyEngine'
-import { computeResourceSchedule } from '@/lib/resourceScheduler'
+import { computeResourceSchedule, resolveEventTime } from '@/lib/resourceScheduler'
 import { buildResourceOwnerIndex } from '@/lib/resourceTree'
 import {
   buildExcelRows, COLUMN_KEYS, COLUMN_LABELS, ColumnKey,
@@ -154,7 +154,7 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
       bold: isSummary,
       color: { argb: isSummary ? 'FF1F5FE8' : 'FF12161B' }
     }
-    const numericCols = new Set(['startMs', 'anchorMs', 'durationMs', 'endMs']
+    const numericCols = new Set(['startMs', 'anchorMs', 'offsetFromParentMs', 'durationMs', 'endMs']
       .map(k => COLUMN_KEYS.indexOf(k as ColumnKey) + 1))
     row.eachCell({ includeEmpty: true }, (cell, col) => {
       cell.alignment = { vertical: 'middle', horizontal: numericCols.has(col) ? 'right' : 'left', indent: col === 6 ? r.level - 1 : 0 }
@@ -320,9 +320,10 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
     { header: '每周期步进', key: 'step', width: 14 },
     { header: '起始槽', key: 'startSlot', width: 12 },
     { header: '工位偏移', key: 'stationOffset', width: 12 },
-    { header: '备注', key: 'notes', width: 30 }
+    { header: '备注', key: 'notes', width: 30 },
+    { header: '归属节点ID', key: 'ownerNodeId', width: 24 }
   ]
-  styleHeader(resWs, 1, 11, layout)
+  styleHeader(resWs, 1, 12, layout)
   project.resources.forEach(r => {
     const row = resWs.addRow({
       id: r.id, name: r.name, type: r.type ?? '', color: r.color ?? '',
@@ -332,7 +333,8 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
       step: r.motion?.type === 'rotary' ? r.motion.stepPerCycle : '',
       startSlot: r.motion?.type === 'rotary' ? (r.motion.startSlot ?? 0) : '',
       stationOffset: r.motion?.type === 'rotary' ? (r.motion.stationOffset ?? 0) : '',
-      notes: r.notes ?? ''
+      notes: r.notes ?? '',
+      ownerNodeId: r.ownerNodeId ?? ''
     })
     row.height = layout.rowHeight
     row.font = { size: layout.fontSize }
@@ -352,13 +354,24 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
     { header: '占用时长(ms)', key: 'durationMs', width: 16 },
     { header: '起(ms)', key: 'startMs', width: 12 },
     { header: '止(ms)', key: 'endMs', width: 12 },
+    { header: '绑定模式', key: 'bindMode', width: 12 },
+    { header: '占用事件动作', key: 'startTaskCode', width: 16 },
+    { header: '占用事件点', key: 'startAt', width: 12 },
+    { header: '占用微调(ms)', key: 'startOffset', width: 14 },
+    { header: '释放事件动作', key: 'endTaskCode', width: 16 },
+    { header: '释放事件点', key: 'endAt', width: 12 },
+    { header: '释放微调(ms)', key: 'endOffset', width: 14 },
     { header: '来源', key: 'source', width: 12 },
     { header: '备注', key: 'notes', width: 24 }
   ]
-  styleHeader(allocWs, 1, 11, layout)
+  styleHeader(allocWs, 1, 18, layout)
   const resourceById = new Map(project.resources.map(r => [r.id, r]))
+  const pointText = (p: 'start' | 'end' | undefined) => p === 'end' ? '结束' : '开始'
   project.allocations.forEach(a => {
     const task = schedule.byId[a.taskId]
+    const isEvent = a.bindMode === 'event'
+    const s = isEvent ? resolveEventTime(a.startRef, schedule) : undefined
+    const e = isEvent ? resolveEventTime(a.endRef, schedule) : undefined
     const row = allocWs.addRow({
       id: a.id,
       taskCode: task?.code ?? a.taskId,
@@ -367,14 +380,21 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
       slotMode: a.slotMode === 'activeSlot' ? '当前选中槽位' : '资源本身',
       offsetMs: a.offsetMs,
       durationMs: a.durationMs,
-      startMs: (task?.startMs ?? 0) + a.offsetMs,
-      endMs: (task?.startMs ?? 0) + a.offsetMs + a.durationMs,
+      startMs: isEvent ? (s ?? 0) : (task?.startMs ?? 0) + a.offsetMs,
+      endMs: isEvent ? (e ?? 0) : (task?.startMs ?? 0) + a.offsetMs + a.durationMs,
+      bindMode: isEvent ? '绑定动作' : '手动时长',
+      startTaskCode: isEvent ? (schedule.byId[a.startRef?.taskId ?? '']?.code ?? a.startRef?.taskId ?? '') : '',
+      startAt: isEvent ? pointText(a.startRef?.at) : '',
+      startOffset: isEvent ? (a.startRef?.offsetMs ?? 0) : '',
+      endTaskCode: isEvent ? (schedule.byId[a.endRef?.taskId ?? '']?.code ?? a.endRef?.taskId ?? '') : '',
+      endAt: isEvent ? pointText(a.endRef?.at) : '',
+      endOffset: isEvent ? (a.endRef?.offsetMs ?? 0) : '',
       source: a.source ?? 'manual',
       notes: a.notes ?? ''
     })
     row.height = layout.rowHeight
     row.font = { size: layout.fontSize }
-    ;[6, 7, 8, 9].forEach(c => { allocWs.getCell(row.number, c).numFmt = '#,##0' })
+    ;[6, 7, 8, 9, 13, 16].forEach(c => { allocWs.getCell(row.number, c).numFmt = '#,##0' })
   })
 
   // ---- Sheet 6: resource Gantt matrix ----------------------------------
@@ -383,7 +403,7 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
   // Derived from the SAME ResourceSchedule the UI uses, so occupancy and
   // conflicts in the export cannot disagree with the app.
   const resourceSchedule = computeResourceSchedule(schedule, project.allocations ?? [], project.resources ?? [])
-  const ownerIndex = buildResourceOwnerIndex(project.modules ?? [])
+  const ownerIndex = buildResourceOwnerIndex(project.modules ?? [], project.resources ?? [])
   const resMatrix = workbook.addWorksheet(SHEET_RESOURCE_MATRIX, { views: [{ state: 'frozen', xSplit: 4, ySplit: 1 }] })
   const resHeader: string[] = ['资源', '归属模块/机构', '占用次数', '冲突']
   for (let i = 0; i < bucketCount; i++) resHeader.push(i % labelEvery === 0 ? formatTime(i * stepMs, config) : '')
@@ -489,6 +509,7 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
       resourceId: findCol('映射资源ID', '映射资源'),
       startMs: findCol('开始 (ms)', '开始'),
       anchorMs: findCol('锚定起始', 'anchorMs'),
+      offsetFromParentMs: findCol('相对父偏移', 'offsetFromParentMs'),
       durationMs: findCol('持续 (ms)', '持续'),
       endMs: findCol('结束 (ms)', '结束'),
       startMode: findCol('起始模式'),
@@ -559,6 +580,9 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
         durationMs: isSummary ? 0 : durationMs,
         endMs: startMs + (isSummary ? 0 : durationMs),
         startMode: text(row, 'startMode').includes('锁定') ? 'manual' : 'auto',
+        offsetFromParentMs: kind === 'subaction' && col.offsetFromParentMs >= 0
+          ? Math.max(0, Math.round(number(row, 'offsetFromParentMs')))
+          : undefined,
         predecessors: [],
         startX: 0,
         calculatedStartX: 0,
@@ -704,6 +728,7 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
           type: cellText(row.getCell(3).value).trim() || undefined,
           color: cellText(row.getCell(4).value).trim() || undefined,
           parentId,
+          ownerNodeId: cellText(row.getCell(12).value).trim() || undefined,
           slotIndex: slotIndexRaw ? Math.max(0, Math.round(Number(slotIndexRaw) || 0)) : undefined,
           motion,
           notes: cellText(row.getCell(11).value).trim() || undefined
@@ -728,8 +753,31 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
           ? ('activeSlot' as const) : undefined
         const offsetMs = Math.max(0, Math.round(cellNumber(row.getCell(6).value)))
         const durationMs = Math.max(0, Math.round(cellNumber(row.getCell(7).value)))
-        if (!taskId || !resourceId || durationMs <= 0) {
+        const bindModeText = cellText(row.getCell(10).value).trim()
+        const isEvent = bindModeText === '绑定动作' || bindModeText.toLowerCase() === 'event'
+        const pointOf = (v: string): 'start' | 'end' => v === '结束' || v.toLowerCase() === 'end' ? 'end' : 'start'
+        const resolveEvent = (codeCell: number, pointCell: number, offsetCell: number) => {
+          const code = templateIdOf(cellText(row.getCell(codeCell).value).trim())
+          const eventTaskId = code ? resolve(code) : undefined
+          if (!eventTaskId) return undefined
+          return {
+            taskId: eventTaskId,
+            at: pointOf(cellText(row.getCell(pointCell).value).trim()),
+            offsetMs: Math.round(cellNumber(row.getCell(offsetCell).value))
+          }
+        }
+        const startRef = isEvent ? resolveEvent(11, 12, 13) : undefined
+        const endRef = isEvent ? resolveEvent(14, 15, 16) : undefined
+        if (!taskId || !resourceId) {
           if (taskCode || resourceKey) warnings.push(`占用行 ${r} 的动作或资源未找到，已跳过`)
+          continue
+        }
+        if (isEvent && (!startRef || !endRef)) {
+          warnings.push(`占用行 ${r} 的事件动作未找到，已跳过`)
+          continue
+        }
+        if (!isEvent && durationMs <= 0) {
+          warnings.push(`占用行 ${r} 的时长必须大于 0，已跳过`)
           continue
         }
         allocations.push({
@@ -739,7 +787,10 @@ export async function importGanttWorkbook(file: File): Promise<ExcelImportResult
           slotMode,
           offsetMs,
           durationMs,
-          notes: cellText(row.getCell(11).value).trim() || undefined
+          bindMode: isEvent ? 'event' : 'manual',
+          startRef,
+          endRef,
+          notes: cellText(row.getCell(18).value).trim() || undefined
         })
       }
     }

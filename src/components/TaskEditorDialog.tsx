@@ -67,11 +67,19 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
     setStage(task.module.stage ?? '')
     setColor(task.module.color ?? MODULE_COLORS[0])
     setApplyColorToChildren(false)
-    setStartText(String(task.startMs))
+    // Sub-actions are authored relative to their parent action: show the
+    // offset + duration so the displayed "start" is exactly what gets stored.
+    if (task.kind === 'subaction') {
+      const offset = task.module.offsetFromParentMs ?? 0
+      setStartText(String(offset))
+      setEndText(String(offset + task.durationMs))
+    } else {
+      setStartText(String(task.startMs))
+      setEndText(String(task.endMs))
+    }
     setDurationText(String(task.durationMs))
-    setEndText(String(task.endMs))
     setNewPredId('')
-  }, [task?.id, task?.startMs, task?.durationMs, task?.endMs, task?.module.actionDescription])
+  }, [task?.id, task?.kind, task?.startMs, task?.durationMs, task?.endMs, task?.module.offsetFromParentMs, task?.module.actionDescription])
 
   if (!taskId || !task || !project) return null
 
@@ -218,7 +226,8 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
             {task.kind === 'mechanism' && (
               <div className="col-span-3">
                 <label className={labelClass}>{t('resource.mapResource', { defaultValue: '映射资源（物理模块 → 抽象资源）' })}</label>
-                <select className={inputClass} value={task.module.resourceId ?? ''}
+                <select className={inputClass}
+                  value={(project?.resources ?? []).find(r => r.ownerNodeId === task.id)?.id ?? ''}
                   onChange={e => linkMechanismResource(task.id, e.target.value || null)}>
                   <option value="">{t('resource.noMapping', { defaultValue: '（不归属 · 显示在未分组）' })}</option>
                   {(project?.resources ?? []).filter(r => !r.parentId).map(r => (
@@ -226,7 +235,7 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
                   ))}
                 </select>
                 <p className="text-[10px] text-muted-foreground mt-1">
-                  {t('resource.mapHint', { defaultValue: '映射只表示该机构在层级上归属到该资源，用于资源泳道分组；该机构下的动作不会因此自动占用资源。占用请在流程甘特图为具体动作设置。' })}
+                  {t('resource.mapHint', { defaultValue: '选择一个资源归属到本机构；一个机构可归属多个资源（在资源管理器里设置）。映射只用于资源泳道分组，不会让该机构下的动作自动占用资源。实际占用请在流程甘特图为动作设置。' })}
                 </p>
               </div>
             )}
@@ -264,9 +273,18 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
                 {t('gantt.precision', { defaultValue: '精度' })} {config.precisionMs} ms · {describeDuration(task.durationMs)}
               </span>
             </div>
+            {task.kind === 'subaction' && (
+              <p className="text-xs mb-2 text-blue-400">
+                {t('gantt.subRelativeHint', { defaultValue: '子动作的开始/结束为相对父动作的偏移 (ms)；父动作移动时自动跟随。' })}
+              </p>
+            )}
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className={labelClass}>{t('gantt.start', { defaultValue: '开始 (ms)' })}</label>
+                <label className={labelClass}>
+                  {task.kind === 'subaction'
+                    ? t('gantt.startOffset', { defaultValue: '开始偏移 (ms)' })
+                    : t('gantt.start', { defaultValue: '开始 (ms)' })}
+                </label>
                 <input className={inputClass} value={startText} onChange={e => setStartText(e.target.value)}
                   onBlur={() => commitTime('startMs', startText)}
                   onKeyDown={e => e.key === 'Enter' && commitTime('startMs', startText)} />
@@ -278,7 +296,11 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
                   onKeyDown={e => e.key === 'Enter' && commitTime('durationMs', durationText)} />
               </div>
               <div>
-                <label className={labelClass}>{t('gantt.end', { defaultValue: '结束 (ms)' })}</label>
+                <label className={labelClass}>
+                  {task.kind === 'subaction'
+                    ? t('gantt.endOffset', { defaultValue: '结束偏移 (ms)' })
+                    : t('gantt.end', { defaultValue: '结束 (ms)' })}
+                </label>
                 <input className={inputClass} value={endText} onChange={e => setEndText(e.target.value)}
                   onBlur={() => commitTime('endMs', endText)}
                   onKeyDown={e => e.key === 'Enter' && commitTime('endMs', endText)} />

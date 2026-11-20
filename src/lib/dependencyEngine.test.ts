@@ -189,9 +189,9 @@ describe('hierarchy 模块 → 机构 → 动作 → 子动作 → ...', () => {
     const module = { ...task({ moduleName: '进样模块', actionDescription: '进样模块', durationMs: 0 }), id: 'M', kind: 'module' as TaskKind }
     const mechanism = { ...task({ moduleName: 'Feeder_1', actionDescription: 'Feeder_1', durationMs: 0, parentId: 'M' }), id: 'K', kind: 'mechanism' as TaskKind }
     const action = { ...task({ startMs: 100, durationMs: 400, parentId: 'K' }), id: 'A' }
-    const sub1 = { ...task({ durationMs: 100, parentId: 'A', predecessors: [dep('A')] }), id: 'S1', kind: 'subaction' as TaskKind }
-    const sub2 = { ...task({ durationMs: 50, parentId: 'S1', predecessors: [dep('S1')] }), id: 'S2', kind: 'subaction' as TaskKind }
-    const sub3 = { ...task({ durationMs: 25, parentId: 'S2', predecessors: [dep('S2')] }), id: 'S3', kind: 'subaction' as TaskKind }
+    const sub1 = { ...task({ startMs: 500, durationMs: 100, parentId: 'A' }), id: 'S1', kind: 'subaction' as TaskKind, offsetFromParentMs: 400 }
+    const sub2 = { ...task({ startMs: 600, durationMs: 50, parentId: 'S1' }), id: 'S2', kind: 'subaction' as TaskKind, offsetFromParentMs: 100 }
+    const sub3 = { ...task({ startMs: 650, durationMs: 25, parentId: 'S2' }), id: 'S3', kind: 'subaction' as TaskKind, offsetFromParentMs: 50 }
     return resolve([module, mechanism, action, sub1, sub2, sub3])
   }
 
@@ -269,5 +269,82 @@ describe('legacy mirror fields', () => {
     expect(modules[0].moveCount).toBe(1.5)
     expect(modules[0].duration).toBe(50)
     expect(modules[0].endMs).toBe(200)
+  })
+})
+
+describe('parent/child time association', () => {
+  const fixture = () => [
+    { ...task({ id: 'M', moduleName: '模块', durationMs: 0, parentId: null }), kind: 'module' as TaskKind },
+    { ...task({ id: 'K', moduleName: '机构', durationMs: 0, parentId: 'M' }), kind: 'mechanism' as TaskKind },
+    { ...task({ id: 'A', startMs: 1000, durationMs: 800, parentId: 'K' }) }
+  ]
+
+  it('derives a sub-action start from the parent action start plus its offset', () => {
+    const [m, k, a] = fixture()
+    const sub = { ...task({ id: 'S', parentId: 'A', durationMs: 300 }), offsetFromParentMs: 200 }
+    const s = computeSchedule([m, k, a, sub], CONFIG)
+    expect(s.byId.S.startMs).toBe(1200) // 1000 + 200
+    expect(s.byId.S.endMs).toBe(1500)
+  })
+
+  it('drags sub-actions along when the parent action moves (manual edit)', () => {
+    const [m, k, a] = fixture()
+    const sub = { ...task({ id: 'S', parentId: 'A', durationMs: 300 }), offsetFromParentMs: 200 }
+    const moved = { ...a, startMs: 5000, anchorMs: 5000 }
+    const s = computeSchedule([m, k, moved, sub], CONFIG)
+    expect(s.byId.S.startMs).toBe(5200)
+  })
+
+  it('drags sub-actions along through a dependency cascade', () => {
+    const [m, k] = fixture()
+    const trigger = { ...task({ id: 'T', startMs: 0, durationMs: 400, parentId: 'K' }) }
+    const dependent = {
+      ...task({ id: 'A', startMs: 1000, durationMs: 800, parentId: 'K', predecessors: [dep('T')] })
+    }
+    const sub = { ...task({ id: 'S', parentId: 'A', durationMs: 300 }), offsetFromParentMs: 200 }
+    const before = computeSchedule([m, k, trigger, dependent, sub], CONFIG)
+    expect(before.byId.S.startMs).toBe(600) // A starts at T end (400), S = 400 + 200
+    // Push the trigger later by 1000 → A cascades to 1400, S follows to 1600.
+    const movedTrigger = { ...trigger, startMs: 1000, anchorMs: 1000 }
+    const after = computeSchedule([m, k, movedTrigger, dependent, sub], CONFIG)
+    expect(after.byId.A.startMs).toBe(1400)
+    expect(after.byId.S.startMs).toBe(1600)
+  })
+
+  it('grows the parent action to contain an overshooting sub-action even with predecessors', () => {
+    const [m, k] = fixture()
+    const trigger = { ...task({ id: 'T', startMs: 0, durationMs: 200, parentId: 'K' }) }
+    const dependent = {
+      ...task({ id: 'A', startMs: 0, durationMs: 100, parentId: 'K', predecessors: [dep('T')] })
+    }
+    // Sub starts at offset 500 with a 600ms body → ends at 1100, way past A.
+    const sub = { ...task({ id: 'S', parentId: 'A', durationMs: 600 }), offsetFromParentMs: 500 }
+    const s = computeSchedule([m, k, trigger, dependent, sub], CONFIG)
+    // A is auto with a predecessor; dependency pins its start to 200, but the
+    // window must still stretch to contain the child (old bug pulled it back).
+    expect(s.byId.A.startMs).toBe(200)
+    expect(s.byId.A.endMs).toBeGreaterThanOrEqual(s.byId.S.endMs)
+    expect(s.byId.S.startMs).toBe(700) // 200 + 500
+  })
+
+  it('chains nested sub-actions through their own parent start', () => {
+    const [m, k, a] = fixture()
+    const s1 = { ...task({ id: 'S1', parentId: 'A', durationMs: 500 }), offsetFromParentMs: 100 }
+    const s2 = { ...task({ id: 'S2', parentId: 'S1', durationMs: 200 }), offsetFromParentMs: 50 }
+    const s = computeSchedule([m, k, a, s1, s2], CONFIG)
+    expect(s.byId.S1.startMs).toBe(1100)
+    expect(s.byId.S2.startMs).toBe(1150) // S1 start + 50
+  })
+
+  it('keeps a predecessor as a hard lower bound even when an offset would be earlier', () => {
+    const [m, k, a] = fixture()
+    const gate = { ...task({ id: 'G', startMs: 3000, durationMs: 100, parentId: 'K' }) }
+    // Sub offset 100 wants start 1100, but its predecessor ends at 3100.
+    const sub = {
+      ...task({ id: 'S', parentId: 'A', durationMs: 200, predecessors: [dep('G')] }),
+      offsetFromParentMs: 100
+    }
+    const s = computeSchedule([m, k, a, gate, sub], CONFIG)
+    expect(s.byId.S.startMs).toBe(3100)
   })
 })

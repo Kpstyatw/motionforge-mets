@@ -13,7 +13,7 @@ export const MATRIX_MAX_COLUMNS = 180
 
 export const COLUMN_KEYS = [
   'code', 'level', 'kind', 'module', 'mechanism', 'action', 'stage', 'resourceId',
-  'startMs', 'anchorMs', 'durationMs', 'endMs', 'startMode', 'predecessors',
+  'startMs', 'anchorMs', 'offsetFromParentMs', 'durationMs', 'endMs', 'startMode', 'predecessors',
   'parentCode', 'path', 'color', 'id'
 ] as const
 
@@ -30,6 +30,7 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
   resourceId: '映射资源ID',
   startMs: '开始 (ms)',
   anchorMs: '锚定起始 (ms)',
+  offsetFromParentMs: '相对父偏移 (ms)',
   durationMs: '持续 (ms)',
   endMs: '结束 (ms)',
   startMode: '起始模式',
@@ -56,6 +57,7 @@ export interface ExcelTableRow {
   resourceId: string
   startMs: number
   anchorMs: number
+  offsetFromParentMs: number
   durationMs: number
   endMs: number
   startMode: string
@@ -81,6 +83,7 @@ export function buildExcelRows(schedule: ScheduleResult, rows: TreeRow[]): Excel
       resourceId: task.module.resourceId ?? '',
       startMs: task.startMs,
       anchorMs: task.module.anchorMs ?? task.startMs,
+      offsetFromParentMs: task.module.offsetFromParentMs ?? 0,
       durationMs: task.durationMs,
       endMs: task.endMs,
       startMode: task.startMode,

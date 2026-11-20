@@ -147,7 +147,7 @@ export function buildPdfReport(input: PdfReportInput): PdfReportDocument {
     )
     resourceChartSvg = renderResourceGanttSvg({
       schedule: resourceSchedule,
-      owners: buildResourceOwnerIndex(modules),
+      owners: buildResourceOwnerIndex(modules, input.resources ?? []),
       config: timeConfig,
       totalMs: Math.max(schedule.totalMs, 1),
       width,

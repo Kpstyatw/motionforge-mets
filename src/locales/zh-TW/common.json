@@ -180,7 +180,9 @@
   },
   "common": {
     "cancel": "取消",
-    "apply": "套用"
+    "apply": "套用",
+    "edit": "編輯",
+    "save": "儲存"
   },
   "units": {
     "ms": "毫秒",
@@ -427,7 +429,10 @@
     "groupResource": "資源",
     "groupResourceTip": "按機構/馬達檢視佔用與衝突",
     "mechanismConflict": "機構衝突",
-    "mechanismConflictHint": "橘色為機構並發衝突：同一機構在同一時間執行多個動作（僅提示，不自動改時序）。點擊可跳到對應動作。"
+    "mechanismConflictHint": "橘色為機構並發衝突：同一機構在同一時間執行多個動作（僅提示，不自動改時序）。點擊可跳到對應動作。",
+    "subRelativeHint": "子動作的開始/結束為相對父動作的偏移 (ms)；父動作移動時自動跟隨。",
+    "startOffset": "開始偏移 (ms)",
+    "endOffset": "結束偏移 (ms)"
   },
   "timeScale": {
     "title": "時間刻度與精度",
@@ -511,7 +516,7 @@
     "allocSection": "資源佔用",
     "allocSectionHint": "精確視窗，重疊會提示",
     "editAlloc": "編輯佔用",
-    "allocHint": "佔用視窗相對本動作開始時間。動作被依賴順延時，佔用視窗自動跟隨。同一資源視窗重疊會在資源檢視標紅（僅提示）。",
+    "allocHint": "占用視窗可手動填寫偏移與時長，也可綁定到真實動作的開始/結束事件。任一方式下，依賴順延時視窗都會自動跟隨。同一資源視窗重疊僅提示，不改時序。",
     "taskDuration": "動作時長",
     "offset": "偏移",
     "duration": "時長",
@@ -540,7 +545,25 @@
     "activeSlotHint": "按動作所屬週期解析到當前選中槽位",
     "editResource": "編輯該資源（名稱 / 歸屬 / 類型 / 旋轉）",
     "addNew": "新建一個資源（如需，展開後填寫名稱再點新增）",
-    "editFocusHint": "正在編輯下方高亮的資源：直接改名稱 / 類型 / 歸屬即可，改完按 Enter 或點別處自動儲存，無需再點「新增」。「新增」只用來建立一個新資源。"
+    "editFocusHint": "正在編輯下方高亮的資源：直接改名稱 / 類型 / 歸屬即可，改完按 Enter 或點別處自動儲存，無需再點「新增」。「新增」只用來建立一個新資源。",
+    "manualMode": "手動時長",
+    "eventMode": "綁定動作",
+    "eventModeHint": "視窗由起止動作事件決定",
+    "startEvent": "占用開始事件",
+    "endEvent": "釋放事件",
+    "selectAction": "（選擇動作）",
+    "atStart": "開始時",
+    "atEnd": "結束時",
+    "needEventTasks": "請選擇占用開始動作與釋放動作",
+    "eventTaskMissing": "引用的動作已不存在",
+    "eventOrder": "釋放事件必須晚於占用事件",
+    "eventPreviewInvalid": "請選擇有效的起止動作事件",
+    "eventOffsetHint": "相對事件的微調（ms，可為負）",
+    "window": "視窗",
+    "invalidRef": "引用失效",
+    "addFailed": "新增占用失敗，請檢查引用是否有效",
+    "editClaim": "編輯占用",
+    "cancelEdit": "取消編輯"
   },
   "cycle": {
     "title": "固定週期設定",

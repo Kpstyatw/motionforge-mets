@@ -112,36 +112,57 @@ export interface ResourceOwner {
 }
 
 /**
- * Build resourceId → owning module/mechanism from the flow tree.
+ * Build resourceId → owning module/mechanism.
  *
- * Both mechanism and module nodes may bind a resource. A mechanism binding
- * nests the resource under its parent module → mechanism; a module binding
- * puts it directly under that module (mechanism fields empty). Multiple nodes
- * may bind the same resource; the first in tree order wins so a resource
- * appears on exactly one lane (no duplicate rows).
+ * Ownership is stored on the RESOURCE side (`Resource.ownerNodeId`) so one
+ * node can own several resources — a mechanism may expose a gripper and a
+ * needle at once. Legacy projects put the binding on the node instead
+ * (`ModuleData.resourceId`); those are still honoured as a fallback.
+ *
+ * A mechanism owner nests the resource under its parent module → mechanism;
+ * a module owner puts it directly under that module. Since ownerNodeId is a
+ * single value per resource, each resource lands on exactly one lane.
  */
-export function buildResourceOwnerIndex(modules: ModuleData[]): Map<string, ResourceOwner> {
+export function buildResourceOwnerIndex(
+  modules: ModuleData[],
+  resources: Resource[] = []
+): Map<string, ResourceOwner> {
   const byId = new Map(modules.map(m => [m.id, m]))
   const owners = new Map<string, ResourceOwner>()
-  for (const m of modules) {
-    if (!m.resourceId || owners.has(m.resourceId)) continue
-    const name = m.moduleName || m.actionDescription || m.code || m.id
-    if (m.kind === 'mechanism') {
-      const parent = m.parentId ? byId.get(m.parentId) : undefined
-      owners.set(m.resourceId, {
+
+  const ownerForNode = (node: ModuleData): ResourceOwner | null => {
+    const name = node.moduleName || node.actionDescription || node.code || node.id
+    if (node.kind === 'mechanism') {
+      const parent = node.parentId ? byId.get(node.parentId) : undefined
+      return {
         moduleId: parent?.id ?? '',
         moduleName: parent?.moduleName || parent?.actionDescription || '',
-        mechanismId: m.id,
+        mechanismId: node.id,
         mechanismName: name
-      })
-    } else if (m.kind === 'module') {
-      owners.set(m.resourceId, {
-        moduleId: m.id,
-        moduleName: name,
-        mechanismId: '',
-        mechanismName: ''
-      })
+      }
     }
+    if (node.kind === 'module') {
+      return { moduleId: node.id, moduleName: name, mechanismId: '', mechanismName: '' }
+    }
+    return null
+  }
+
+  // New model: each resource points at its owning node. Many resources may
+  // share the same ownerNodeId, which is exactly the one-to-many case.
+  for (const r of resources) {
+    if (!r.ownerNodeId) continue
+    const node = byId.get(r.ownerNodeId)
+    if (!node) continue
+    const owner = ownerForNode(node)
+    if (owner) owners.set(r.id, owner)
+  }
+
+  // Legacy model: node.resourceId = R. First node in tree order wins so an
+  // old resource still appears on one lane only.
+  for (const m of modules) {
+    if (!m.resourceId || owners.has(m.resourceId)) continue
+    const owner = ownerForNode(m)
+    if (owner) owners.set(m.resourceId, owner)
   }
   return owners
 }

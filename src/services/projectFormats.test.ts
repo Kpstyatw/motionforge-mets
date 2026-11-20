@@ -72,9 +72,14 @@ function expectSameAuthoringData(actual: ProjectData, expected: ProjectData) {
   expect(actual.modules.find(m => m.id === 'B')?.predecessors?.[0]).toMatchObject({
     fromId: 'A', type: 'FS', lagMs: 125
   })
+  const legacyOwner = new Map<string, string>()
+  for (const m of expected.modules) {
+    if (m.resourceId && !legacyOwner.has(m.resourceId)) legacyOwner.set(m.resourceId, m.id)
+  }
   expect(actual.resources).toEqual(expected.resources.map(r => ({
     ...r,
     type: r.type, color: r.color, notes: r.notes, parentId: r.parentId,
+    ownerNodeId: r.ownerNodeId ?? legacyOwner.get(r.id),
     slotIndex: r.slotIndex,
     motion: r.motion ? {
       type: 'rotary' as const, slots: r.motion.slots, stepPerCycle: r.motion.stepPerCycle,

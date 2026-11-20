@@ -180,7 +180,9 @@
   },
   "common": {
     "cancel": "Cancel",
-    "apply": "Apply"
+    "apply": "Apply",
+    "edit": "Edit",
+    "save": "Save"
   },
   "units": {
     "ms": "ms",
@@ -427,7 +429,10 @@
     "groupResource": "Resource",
     "groupResourceTip": "View claims and conflicts by mechanism / motor",
     "mechanismConflict": "Mechanism conflicts",
-    "mechanismConflictHint": "Amber marks a mechanism concurrency conflict: one mechanism running multiple actions at the same time (hint only — timing is not auto-changed)."
+    "mechanismConflictHint": "Amber marks a mechanism concurrency conflict: one mechanism running multiple actions at the same time (hint only — timing is not auto-changed).",
+    "subRelativeHint": "A sub-action's start/end are offsets from its parent action (ms); they follow when the parent moves.",
+    "startOffset": "Start offset (ms)",
+    "endOffset": "End offset (ms)"
   },
   "timeScale": {
     "title": "Time scale & precision",
@@ -511,7 +516,7 @@
     "allocSection": "Resource allocation",
     "allocSectionHint": "Exact windows, overlaps are flagged",
     "editAlloc": "Edit claims",
-    "allocHint": "Claim windows are relative to this action’s start. When the action is pushed by dependencies, its claims move with it. Overlapping windows on one resource are flagged red in the resource view (hint only).",
+    "allocHint": "The claim window can be typed as offset + duration, or bound to the start/end events of real actions. Either way the window follows dependency cascades. Overlaps on one resource are only flagged, never rescheduled.",
     "taskDuration": "Action duration",
     "offset": "Offset",
     "duration": "Duration",
@@ -540,7 +545,25 @@
     "activeSlotHint": "Resolved to the selected slot for the action's cycle",
     "editResource": "Edit this resource (name / owner / type / rotation)",
     "addNew": "Create a new resource (expand, enter a name, then Add)",
-    "editFocusHint": "Editing the highlighted resource below: just change its name / type / owner and press Enter or click away to save — no need to press “Add”. “Add” only creates a separate new resource."
+    "editFocusHint": "Editing the highlighted resource below: just change its name / type / owner and press Enter or click away to save — no need to press “Add”. “Add” only creates a separate new resource.",
+    "manualMode": "Manual duration",
+    "eventMode": "Bind to actions",
+    "eventModeHint": "Window decided by two action events",
+    "startEvent": "Claim-start event",
+    "endEvent": "Release event",
+    "selectAction": "(select action)",
+    "atStart": "at start",
+    "atEnd": "at end",
+    "needEventTasks": "Select both the claim-start and release actions",
+    "eventTaskMissing": "A referenced action no longer exists",
+    "eventOrder": "The release event must be later than the claim-start event",
+    "eventPreviewInvalid": "Select valid start and end action events",
+    "eventOffsetHint": "Fine offset from the event (ms, may be negative)",
+    "window": "Window",
+    "invalidRef": "reference lost",
+    "addFailed": "Failed to add the claim; check the references",
+    "editClaim": "Edit claim",
+    "cancelEdit": "Cancel edit"
   },
   "cycle": {
     "title": "Fixed cycle settings",

@@ -1,4 +1,4 @@
-import { Resource, ResourceAllocation } from '@/types'
+import { AllocationEventRef, Resource, ResourceAllocation } from '@/types'
 import { ScheduleResult, ScheduledTask } from './dependencyEngine'
 import { claimsShareDomain, resourceDepth, resourceIndex, resolveClaimResourceId } from './resourceTree'
 import { cycleIndexOf } from './cycleEngine'
@@ -62,25 +62,68 @@ export interface ResourceSchedule {
   conflicts: ResourceConflict[]
   /** Task ids involved in any conflict (for warning badges in the flow view). */
   conflictedTaskIds: Set<string>
+  /** Degraded bound claims (deleted reference / inverted window). */
+  warnings: string[]
+}
+
+/**
+ * Absolute ms of one event anchor, resolved against the *live* schedule.
+ * Returns undefined when the referenced task no longer exists (e.g. deleted),
+ * so a bound claim can degrade gracefully instead of producing a bogus window.
+ */
+export function resolveEventTime(
+  ref: AllocationEventRef | undefined,
+  schedule: ScheduleResult
+): number | undefined {
+  if (!ref?.taskId) return undefined
+  const target = schedule.byId[ref.taskId]
+  if (!target) return undefined
+  const base = ref.at === 'end' ? target.endMs : target.startMs
+  if (!Number.isFinite(base)) return undefined
+  return Math.round(base + (ref.offsetMs || 0))
 }
 
 /**
  * Resolve every allocation to an absolute window using the *current* schedule.
  * Claims whose action was removed, or whose action is a summary row, are ignored.
+ * In event mode the window is anchored to two task events; a claim with a
+ * missing/deleted reference or a non-positive span is dropped and reported in
+ * `warnings` (it never silently becomes a zero/inverted block).
  */
 export function placeAllocations(
   schedule: ScheduleResult,
   allocations: ResourceAllocation[],
-  resources: Resource[]
+  resources: Resource[],
+  warnings: string[] = []
 ): PlacedAllocation[] {
   const resourceById = resourceIndex(resources)
   const placed: PlacedAllocation[] = []
   for (const allocation of allocations) {
     const task = schedule.byId[allocation.taskId]
     if (!task || task.isSummary) continue
-    const offset = Math.max(0, Math.round(allocation.offsetMs || 0))
-    const duration = Math.max(0, Math.round(allocation.durationMs || 0))
-    const startMs = task.startMs + offset
+
+    let startMs: number
+    let endMs: number
+    if (allocation.bindMode === 'event') {
+      const s = resolveEventTime(allocation.startRef, schedule)
+      const e = resolveEventTime(allocation.endRef, schedule)
+      if (s === undefined || e === undefined) {
+        warnings.push(`占用 ${allocation.id} 的事件引用已失效（动作被删除），已忽略该占用`)
+        continue
+      }
+      if (e <= s) {
+        warnings.push(`占用 ${allocation.id} 的释放事件不晚于占用事件，已忽略该占用`)
+        continue
+      }
+      startMs = s
+      endMs = e
+    } else {
+      const offset = Math.max(0, Math.round(allocation.offsetMs || 0))
+      const duration = Math.max(0, Math.round(allocation.durationMs || 0))
+      startMs = task.startMs + offset
+      endMs = startMs + duration
+    }
+
     // A claim on the owning task's cycle resolves `activeSlot` to the child
     // slot currently aligned with the station. Multi-cycle tasks carry @Cn.
     const cycle = task.module.cycleIndex ?? cycleIndexOf(task.id)
@@ -91,7 +134,7 @@ export function placeAllocations(
       resource: resourceById.get(effectiveResourceId),
       effectiveResourceId,
       startMs,
-      endMs: startMs + duration
+      endMs
     })
   }
   return placed
@@ -155,7 +198,8 @@ export function computeResourceSchedule(
   allocations: ResourceAllocation[],
   resources: Resource[]
 ): ResourceSchedule {
-  const placed = placeAllocations(schedule, allocations, resources)
+  const warnings: string[] = []
+  const placed = placeAllocations(schedule, allocations, resources, warnings)
   const conflicts = detectConflicts(placed, resources)
 
   const byResource: Record<string, PlacedAllocation[]> = {}
@@ -195,7 +239,7 @@ export function computeResourceSchedule(
     conflictedTaskIds.add(c.b.task.id)
   }
 
-  return { placed, byResource, lanes, conflicts, conflictedTaskIds }
+  return { placed, byResource, lanes, conflicts, conflictedTaskIds, warnings }
 }
 
 /**

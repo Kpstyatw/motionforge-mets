@@ -180,7 +180,9 @@
   },
   "common": {
     "cancel": "取消",
-    "apply": "应用"
+    "apply": "应用",
+    "edit": "编辑",
+    "save": "保存"
   },
   "units": {
     "ms": "毫秒",
@@ -427,7 +429,10 @@
     "groupResource": "资源",
     "groupResourceTip": "按机构/电机查看占用与冲突",
     "mechanismConflict": "机构冲突",
-    "mechanismConflictHint": "橙色为机构并发冲突：同一机构在同一时间执行多个动作（仅提示，不自动改时序）。点击可跳到对应动作。"
+    "mechanismConflictHint": "橙色为机构并发冲突：同一机构在同一时间执行多个动作（仅提示，不自动改时序）。点击可跳到对应动作。",
+    "subRelativeHint": "子动作的开始/结束为相对父动作的偏移 (ms)；父动作移动时自动跟随。",
+    "startOffset": "开始偏移 (ms)",
+    "endOffset": "结束偏移 (ms)"
   },
   "timeScale": {
     "title": "时间刻度与精度",
@@ -511,7 +516,7 @@
     "allocSection": "资源占用",
     "allocSectionHint": "精确窗口，重叠会提示",
     "editAlloc": "编辑占用",
-    "allocHint": "占用窗口相对本动作开始时间。动作被依赖顺延时，占用窗口自动跟随。同一资源窗口重叠会在资源视图标红（仅提示）。",
+    "allocHint": "占用窗口可手动填写偏移与时长，也可绑定到真实动作的开始/结束事件。任一方式下，依赖顺延时窗口都会自动跟随。同一资源窗口重叠仅提示，不改时序。",
     "taskDuration": "动作时长",
     "offset": "偏移",
     "duration": "时长",
@@ -540,7 +545,25 @@
     "activeSlotHint": "按动作所属周期解析到当前选中槽位",
     "editResource": "编辑该资源（名称 / 归属 / 类型 / 旋转）",
     "addNew": "新建一个资源（如需要，展开填写名称后点添加）",
-    "editFocusHint": "正在编辑下方高亮的资源：直接改名称 / 类型 / 归属即可，改完按回车或点别处自动保存，无需再点“添加”。“添加”只用于新建一个新资源。"
+    "editFocusHint": "正在编辑下方高亮的资源：直接改名称 / 类型 / 归属即可，改完按回车或点别处自动保存，无需再点“添加”。“添加”只用于新建一个新资源。",
+    "manualMode": "手动时长",
+    "eventMode": "绑定动作",
+    "eventModeHint": "窗口由起止动作事件决定",
+    "startEvent": "占用开始事件",
+    "endEvent": "释放事件",
+    "selectAction": "（选择动作）",
+    "atStart": "开始时",
+    "atEnd": "结束时",
+    "needEventTasks": "请选择占用开始动作与释放动作",
+    "eventTaskMissing": "引用的动作已不存在",
+    "eventOrder": "释放事件必须晚于占用事件",
+    "eventPreviewInvalid": "请选择有效的起止动作事件",
+    "eventOffsetHint": "相对事件的微调（ms，可为负）",
+    "window": "窗口",
+    "invalidRef": "引用失效",
+    "addFailed": "添加占用失败，请检查引用是否有效",
+    "editClaim": "编辑占用",
+    "cancelEdit": "取消编辑"
   },
   "cycle": {
     "title": "固定周期设置",

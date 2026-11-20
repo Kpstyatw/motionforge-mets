@@ -65,6 +65,15 @@ export interface ModuleData {
   startMode?: StartMode
   /** Hierarchy parent. Sub-actions may be nested to any depth. */
   parentId?: string | null
+  /**
+   * Sub-action only: start offset measured from the nearest ancestor ACTION's
+   * resolved start (not from the cycle origin). When present, the scheduler
+   * derives this row's absolute start as `parentAction.startMs + offset`, so
+   * moving the parent action (or a dependency cascade) drags every descendant
+   * sub-action along. Absent on actions/modules/mechanisms, which stay on
+   * absolute time. Nested sub-actions chain through their own parent start.
+   */
+  offsetFromParentMs?: number
   kind?: TaskKind
   /**
    * When this row is a mechanism summary, the global resource it represents.
@@ -120,18 +129,58 @@ export interface Resource {
   notes?: string
   /** Parent resource id; children form a tree (wash plate → holes). */
   parentId?: string
+  /**
+   * Flow node (module/mechanism) this resource belongs to. Stored on the
+   * RESOURCE side so one node may own many resources (a mechanism can expose
+   * a gripper + a needle + ...). The legacy ModuleData.resourceId is still
+   * read for old files. This is hierarchy/grouping only — it never creates
+   * occupation; claims still come from ResourceAllocation.
+   */
+  ownerNodeId?: string
   /** 0-based slot identity on a rotary parent; stable while the disc spins. */
   slotIndex?: number
   /** Present on a rotary parent; children inherit its phase. */
   motion?: RotaryMotion
 }
 
+/** Which end of a task's execution window an event anchor refers to. */
+export type AllocationEventPoint = 'start' | 'end'
+
+/**
+ * An event anchor for a bound allocation: a task id plus which of its two
+ * events (start / end) fires, with an optional integer-ms fine offset.
+ * The referenced task may differ from the allocation's owning task — that is
+ * what lets a resource be claimed by one action and released by a later one.
+ */
+export interface AllocationEventRef {
+  taskId: string
+  at: AllocationEventPoint
+  /** Fine adjustment applied to the event time. Integer ms, may be negative. */
+  offsetMs?: number
+}
+
+/**
+ * How the claim's time window is decided:
+ *   manual — [owning task start + offsetMs, + durationMs) (legacy behaviour);
+ *   event  — [startRef event, endRef event), anchored to real actions.
+ * Absent means 'manual', so every pre-existing allocation is unaffected.
+ */
+export type AllocationBindMode = 'manual' | 'event'
+
 /**
  * A claim by one action on one resource, with an exact time window.
- * `offsetMs` is relative to the owning action's resolved start, and `durationMs`
- * is the length of the claim — so when the dependency engine cascades the
- * action to a new start, every claim on it moves with it automatically.
- * Absolute window = [task.startMs + offsetMs, task.startMs + offsetMs + durationMs).
+ *
+ * In `manual` mode (default) `offsetMs` is relative to the owning action's
+ * resolved start and `durationMs` is the length of the claim, so a dependency
+ * cascade moves every claim with its action:
+ *   [task.startMs + offsetMs, task.startMs + offsetMs + durationMs).
+ *
+ * In `event` mode the window is anchored to two task events instead:
+ *   [eventTime(startRef), eventTime(endRef)).
+ * Both ends may point at any action/subaction (not necessarily the owner), so
+ * a resource can be claimed on one action's start and released on a different
+ * action's end. Cascades still follow automatically because event times come
+ * from the live schedule.
  *
  * This is the "关系" entity of the many-to-many relation: one action may hold
  * several allocations (gripper + arm + needle cooperating), and one resource
@@ -141,10 +190,16 @@ export interface ResourceAllocation {
   id: string
   taskId: string
   resourceId: string
-  /** Offset from the owning action's start, integer ms, >= 0. */
+  /** Offset from the owning action's start, integer ms, >= 0. Manual mode only. */
   offsetMs: number
-  /** Length of the claim, integer ms, >= 0. */
+  /** Length of the claim, integer ms, >= 0. Manual mode only. */
   durationMs: number
+  /** Window source. Absent = 'manual' for backward compatibility. */
+  bindMode?: AllocationBindMode
+  /** Claim-start event. Required and used only in 'event' mode. */
+  startRef?: AllocationEventRef
+  /** Claim-release event. Required and used only in 'event' mode. */
+  endRef?: AllocationEventRef
   /**
    * fixed  — claim the resourceId itself (default, legacy behaviour).
    * activeSlot — when resourceId is a rotary parent, resolve to the child slot

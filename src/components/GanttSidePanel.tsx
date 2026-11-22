@@ -3,20 +3,19 @@ import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { computeSchedule, flattenTree } from '@/lib/dependencyEngine'
-import { describeDuration, formatTime, normalizeTimeConfig } from '@/lib/timeScale'
+import { formatTime, normalizeTimeConfig } from '@/lib/timeScale'
 import { findNameIssues, translateNameIssue } from '@/lib/nameValidation'
 import { Plus, Layers3, AlertTriangle } from 'lucide-react'
 
 /** Sidebar for the Gantt view: hierarchy actions, stats and diagnostics. */
 interface GanttSidePanelProps {
   onAddChild: (parentId: string | null) => void
-  onEditTask: (id: string) => void
 }
 
-export const GanttSidePanel: React.FC<GanttSidePanelProps> = ({ onAddChild, onEditTask }) => {
+export const GanttSidePanel: React.FC<GanttSidePanelProps> = ({ onAddChild }) => {
   const { t } = useTranslation()
   const { project, scheduleWarnings } = useProjectStore()
-  const { selectedTaskId, setSelectedTask, collapsedTaskIds, toggleCollapsed } = useUIStore()
+  const { selectedTaskId, collapsedTaskIds } = useUIStore()
   const config = normalizeTimeConfig(project?.timeConfig)
   const schedule = useMemo(
     () => computeSchedule(project?.modules ?? [], config),
@@ -91,33 +90,14 @@ export const GanttSidePanel: React.FC<GanttSidePanelProps> = ({ onAddChild, onEd
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-auto">
-        {rows.map(row => (
-          <button
-            key={row.task.id}
-            onClick={() => setSelectedTask(row.task.id)}
-            onDoubleClick={() => onEditTask(row.task.id)}
-            className={`w-full text-left px-2 py-1 text-xs border-b flex items-center gap-1 ${selectedTaskId === row.task.id ? 'bg-primary/15' : 'hover:bg-accent/40'}`}
-            style={{ paddingLeft: 8 + row.depth * 12 }}
-            title={`${row.task.code} · ${row.task.startMs}–${row.task.endMs} ms`}
-          >
-            {row.hasChildren && (
-              <span onClick={e => { e.stopPropagation(); toggleCollapsed(row.task.id) }}
-                className="text-muted-foreground w-3 flex-shrink-0">
-                {row.collapsed ? '▸' : '▾'}
-              </span>
-            )}
-            <span className="h-2 w-2 rounded-full border border-black/10 flex-shrink-0"
-              style={{ backgroundColor: row.task.module.color || '#3b82f6' }} title={row.task.module.color} />
-            <span className="font-mono text-[10px] text-muted-foreground w-16 flex-shrink-0 truncate" title={row.task.code}>{row.task.code}</span>
-            <span className="truncate flex-1" title={row.task.module.actionDescription}>{row.task.module.actionDescription}</span>
-            <span className="font-mono text-[10px] text-muted-foreground flex-shrink-0">{describeDuration(row.task.durationMs)}</span>
-          </button>
-        ))}
-      </div>
+      {/* Hierarchy tree lives in the Gantt label column (row-aligned with the
+          time axis). This panel intentionally keeps only stats, add actions
+          and diagnostics — no duplicate tree. */}
+      <div className="flex-1 min-h-0" />
 
-      <div className="px-3 py-2 border-t text-[11px] text-muted-foreground">
-        {t('gantt.sideHint', { defaultValue: '单击选中，双击编辑；箭头显示依赖链路。' })}
+      <div className="px-3 py-2 border-t text-[11px] text-muted-foreground space-y-1">
+        <div>{t('gantt.sideHint', { defaultValue: '模块 / 机构 / 动作层级请在右侧甘特图的标签列查看、选中与编辑，标签行与时间轴逐行对齐。' })}</div>
+        <div>{t('gantt.sideHintDeps', { defaultValue: '单击选中节点后，其依赖链路会在甘特图中高亮。' })}</div>
       </div>
     </div>
   )

@@ -182,13 +182,13 @@ export const ResourceLanes: React.FC<ResourceLanesProps> = ({
       <div className="flex-1 min-h-0 overflow-auto">
         <div className="flex" style={{ width: labelWidth + chartWidth, minHeight: HEADER_HEIGHT + bodyHeight }}>
           {/* sticky labels — ownership tree + resource names */}
-          <div className="flex-shrink-0 border-r bg-background z-10 relative"
+          <div className="flex-shrink-0 border-r bg-background z-30 relative"
             style={{ width: labelWidth, position: 'sticky', left: 0 }}
             title={t('gantt.labelResizeTip', { defaultValue: '拖动右边缘调整列宽，双击恢复自适应' })}>
             <div className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-primary/40 active:bg-primary/60 z-20"
               onMouseDown={startResize}
               onDoubleClick={() => setManualLabelWidth(null)} />
-            <div className="flex items-center justify-between px-3 border-b bg-muted/60 font-medium text-xs" style={{ height: HEADER_HEIGHT }}>
+            <div className="flex items-center justify-between px-3 border-b bg-muted font-medium text-xs" style={{ height: HEADER_HEIGHT, position: 'sticky', top: 0, zIndex: 10 }}>
               <span>{t('resource.laneHeader', { defaultValue: '资源泳道 · 模块 / 机构 / 资源' })}</span>
               <button onClick={onManageResources} className="p-1 rounded hover:bg-accent" title={t('resource.manage', { defaultValue: '管理资源' })}>
                 <Plus className="h-3.5 w-3.5" />
@@ -254,7 +254,8 @@ export const ResourceLanes: React.FC<ResourceLanesProps> = ({
 
           {/* chart surface */}
           <div className="relative flex-shrink-0" style={{ width: chartWidth }}>
-            <svg width={chartWidth} height={HEADER_HEIGHT} className="block border-b bg-muted/40">
+            <svg width={chartWidth} height={HEADER_HEIGHT} className="block border-b bg-muted"
+              style={{ position: 'sticky', top: 0, zIndex: 20 }}>
               {ticks.map(ms => (
                 <g key={ms}>
                   <line x1={ms * pxPerMs} y1={0} x2={ms * pxPerMs} y2={HEADER_HEIGHT} stroke="currentColor" strokeOpacity={0.18} />

@@ -368,7 +368,7 @@
     "fit": "适应窗口",
     "visibleCount": "可见行",
     "taskCount": "节点数",
-    "sideHint": "单击选中，双击编辑；箭头显示依赖链路。",
+    "sideHint": "模块 / 机构 / 动作层级请在右侧甘特图的标签列查看、选中与编辑，标签行与时间轴逐行对齐。",
     "editSelected": "编辑选中",
     "color": "颜色",
     "applyColorToChildren": "同步到所有下级",
@@ -435,7 +435,8 @@
     "endOffset": "结束偏移 (ms)",
     "endOffsetReadonly": "由开始偏移 + 持续时长自动得出，无需单独填写",
     "childDrivenHint": "该动作有子动作：开始/结束由所有子动作的最早开始与最晚结束自动汇总，不能直接修改。编辑子动作时间即可更新本动作。",
-    "absoluteHint": "使用绝对时刻 (ms)；若有子动作，其时间将由子动作自动汇总。"
+    "absoluteHint": "使用绝对时刻 (ms)；若有子动作，其时间将由子动作自动汇总。",
+    "sideHintDeps": "单击选中节点后，其依赖链路会在甘特图中高亮。"
   },
   "timeScale": {
     "title": "时间刻度与精度",

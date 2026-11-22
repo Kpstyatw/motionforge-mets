@@ -346,7 +346,7 @@ export const GanttView: React.FC<GanttViewProps> = ({
         <div className="flex" style={{ width: labelWidth + chartWidth, minHeight: HEADER_HEIGHT + bodyHeight }}>
           {/* Sticky label column — width follows the longest name, draggable to resize */}
           <div
-            className="flex-shrink-0 border-r bg-background z-10 relative"
+            className="flex-shrink-0 border-r bg-background z-30 relative"
             style={{ width: labelWidth, position: 'sticky', left: 0 }}
             title={t('gantt.labelResizeTip', { defaultValue: '拖动右边缘调整列宽，双击恢复自适应' })}
           >
@@ -355,8 +355,8 @@ export const GanttView: React.FC<GanttViewProps> = ({
               onMouseDown={startResize}
               onDoubleClick={() => setManualLabelWidth(null)}
             />
-            <div className="flex items-center justify-between px-3 border-b bg-muted/60 font-medium text-xs"
-              style={{ height: HEADER_HEIGHT }}>
+            <div className="flex items-center justify-between px-3 border-b bg-muted font-medium text-xs"
+              style={{ height: HEADER_HEIGHT, position: 'sticky', top: 0, zIndex: 10 }}>
               <span>{t('gantt.hierarchy', { defaultValue: '模块 / 机构 / 动作 / 子动作' })}</span>
               <span className="text-muted-foreground">
                 {t('gantt.startEnd', { defaultValue: '起止 (ms)' })}{expanded ? ` ×${cycleCfg.repeats}` : ''}
@@ -381,7 +381,8 @@ export const GanttView: React.FC<GanttViewProps> = ({
 
           {/* Chart surface */}
           <div className="relative flex-shrink-0" style={{ width: chartWidth }}>
-            <svg width={chartWidth} height={HEADER_HEIGHT} className="block border-b bg-muted/40">
+            <svg width={chartWidth} height={HEADER_HEIGHT} className="block border-b bg-muted"
+              style={{ position: 'sticky', top: 0, zIndex: 20 }}>
               {ticks.map(ms => {
                 const x = ms * pxPerMs
                 return (

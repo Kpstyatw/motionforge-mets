@@ -368,7 +368,7 @@
     "fit": "適應視窗",
     "visibleCount": "可見列",
     "taskCount": "節點數",
-    "sideHint": "單擊選取，雙擊編輯；箭頭顯示依賴鏈路。",
+    "sideHint": "模組 / 機構 / 動作層級請在右側甘特圖的標籤列查看、選取與編輯，標籤列與時間軸逐行對齊。",
     "editSelected": "編輯選取",
     "color": "顏色",
     "applyColorToChildren": "同步到所有下級",
@@ -435,7 +435,8 @@
     "endOffset": "結束偏移 (ms)",
     "endOffsetReadonly": "由開始偏移 + 持續時長自動得出，無需單獨填寫",
     "childDrivenHint": "該動作有子動作：開始/結束由所有子動作的最早開始與最晚結束自動彙總，不能直接修改。編輯子動作時間即可更新本動作。",
-    "absoluteHint": "使用絕對時刻 (ms)；若有子動作，其時間將由子動作自動彙總。"
+    "absoluteHint": "使用絕對時刻 (ms)；若有子動作，其時間將由子動作自動彙總。",
+    "sideHintDeps": "單擊選取節點後，其依賴鏈路會在甘特圖中高亮。"
   },
   "timeScale": {
     "title": "時間刻度與精度",

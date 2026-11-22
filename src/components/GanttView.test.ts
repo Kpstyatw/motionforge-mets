@@ -77,6 +77,18 @@ describe('Gantt multi-cycle layout', () => {
     expect(html).toContain('×3')
   })
 
+  it('keeps the time ruler sticky so vertical scroll does not move it', () => {
+    load({ enabled: false, cycleMs: 1000, repeats: 1 })
+    const html = renderToStaticMarkup(React.createElement(GanttView, props))
+    // The ruler <svg> (height === HEADER_HEIGHT, before the body svg) must be sticky at top.
+    const rulerMatch = html.match(/<svg[^>]*height="46"[^>]*>/)
+    expect(rulerMatch).toBeTruthy()
+    expect(rulerMatch![0]).toMatch(/position:sticky/)
+    expect(rulerMatch![0]).toMatch(/top:0/)
+    // The label-column header is sticky too, so labels and time axis stay aligned.
+    expect(html).toMatch(/position:sticky;top:0/)
+  })
+
   it('time-cell width (pxPerMs) drives the drawn bar width', () => {
     load({ enabled: false, cycleMs: 1000, repeats: 3 })
     const barWidth = (html: string) => {

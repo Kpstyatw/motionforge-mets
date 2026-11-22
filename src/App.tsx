@@ -405,7 +405,7 @@ function App() {
             onDoubleClick={() => setManualSideWidth(null)} />
           <div className="flex-1 min-h-0 overflow-hidden">
             {chartView === 'gantt' ? (
-              <GanttSidePanel onAddChild={openAddChild} onEditTask={openEditor} />
+              <GanttSidePanel onAddChild={openAddChild} />
             ) : (
               <ParameterTable />
             )}

@@ -368,7 +368,7 @@
     "fit": "Fit to window",
     "visibleCount": "Visible rows",
     "taskCount": "Nodes",
-    "sideHint": "Click to select, double-click to edit; arrows show the dependency chain.",
+    "sideHint": "Browse, select and edit the module / mechanism / action hierarchy in the Gantt label column on the right — its rows align with the time axis.",
     "editSelected": "Edit selected",
     "color": "Colour",
     "applyColorToChildren": "Apply to all descendants",
@@ -435,7 +435,8 @@
     "endOffset": "End offset (ms)",
     "endOffsetReadonly": "Derived from start offset + duration; no need to fill in separately",
     "childDrivenHint": "This action has sub-actions: its start/end are rolled up from the earliest child start and latest child end, so they cannot be edited directly. Edit a child to update this action.",
-    "absoluteHint": "Uses an absolute clock (ms); if the node has children, its time is rolled up from them."
+    "absoluteHint": "Uses an absolute clock (ms); if the node has children, its time is rolled up from them.",
+    "sideHintDeps": "Select a node to highlight its dependency chain in the Gantt."
   },
   "timeScale": {
     "title": "Time scale & precision",

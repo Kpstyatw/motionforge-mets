@@ -475,11 +475,31 @@ describe('addAction child-driven timing', () => {
     expect(schedule().byId[id!].startMs).toBe(5000)
   })
 
-  it('defaults a new sub-action to the parent end', () => {
+  it('defaults a new sub-action to the parent start, not its end', () => {
     load(base())
-    const id = useProjectStore.getState().addAction({ kind: 'subaction', parentId: 'A' })
-    // Store falls back to parent's authored start (1000); UI sends parent end.
-    expect(schedule().byId[id!].startMs).toBe(1000)
+    const id = useProjectStore.getState().addAction({ kind: 'subaction', parentId: 'A' })!
+    expect(schedule().byId[id].startMs).toBe(1000)
+    expect(schedule().byId[id].startMode).toBe('auto')
+  })
+
+  it('defaults a new action to start 0 even when its parent starts later', () => {
+    // A mechanism that rolls up to 1000; a new action under it still starts at 0.
+    load([mk('Mech', 1000, 800), { ...mk('A', 1000, 800), parentId: 'Mech' }])
+    const id = useProjectStore.getState().addAction({ kind: 'action', parentId: 'Mech' })!
+    const node = useProjectStore.getState().project!.modules.find(m => m.id === id)!
+    expect(node.startMs).toBe(0)
+    expect(schedule().byId[id].startMs).toBe(0)
+  })
+
+  it('holds the default time until a predecessor is added, then follows the dependency', () => {
+    load([mk('Seed', 0, 1000), mk('A', 1000, 800)])
+    const id = useProjectStore.getState().addAction({ kind: 'action' })!
+    expect(schedule().byId[id].startMs).toBe(0) // no predecessor -> anchor holds
+
+    useProjectStore.getState().addPredecessor(id, 'Seed', 'FS', 0)
+    const s = schedule()
+    expect(s.byId[id].startMode).toBe('auto')
+    expect(s.byId[id].startMs).toBe(1000) // predecessor end takes over
   })
 })
 

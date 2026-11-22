@@ -63,6 +63,24 @@ export interface ScheduleResult {
 
 export const DEFAULT_DEPENDENCY_TYPE: DependencyType = 'FS'
 
+/**
+ * Default authored start (ms) for a newly created node.
+ *
+ * - A sub-action inherits its parent's current start, so a child added under
+ *   an existing action lines up with it instead of being appended at its end.
+ * - An action (and module / mechanism summaries) starts at 0.
+ *
+ * New nodes are created with `startMode: 'auto'` and `anchorMs` set to this
+ * value: the clock stays put until a predecessor is added, after which
+ * `computeSchedule` drives it from the dependency. This function is the single
+ * source of truth shared by the Add dialog and the store so the two cannot
+ * drift apart.
+ */
+export function defaultNewNodeStartMs(kind: TaskKind, parentStartMs?: number | null): number {
+  if (kind === 'subaction') return Math.max(0, parentStartMs ?? 0)
+  return 0
+}
+
 export const isSummaryKind = (kind: TaskKind | undefined): boolean =>
   kind === 'module' || kind === 'mechanism'
 
@@ -617,31 +635,165 @@ export function computeSchedule(
   })
 
   // Pass 1.7 — dependency propagation after sub-tree shifts. A container's
-  // predecessor may have moved some leaves later; every task that depends on
-  // those leaves must honour their NEW end as a lower bound. Walk the
-  // topological order repeatedly (shifts only push forward, so it converges)
-  // and push any successor that would now start too early.
+  // predecessor may have moved some leaves later; every successor that depends
+  // on those leaves must honour their NEW end as a lower bound. This applies to
+  // leaf successors (pushed directly) AND container successors, whose whole
+  // sub-tree is translated by the same delta as in Pass 1.5. Without the
+  // container branch, a container positioned in Pass 1.5 against a predecessor
+  // that only moves LATER (a leaf inside a deeper container processed further
+  // down `containersDeepFirst`) keeps that stale end for good. Walk the
+  // topological order repeatedly (shifts only push forward, so it converges).
   for (let sweep = 0; sweep < order.length; sweep += 1) {
     let moved = false
     order.forEach(id => {
       const m = byRow.get(id)!
       const result = leafResult.get(id)
-      if (!result || containerIds.has(id)) return
+      if (!result) return
+      const isContainer = containerIds.has(id)
       const deps = (m.predecessors ?? []).filter(
         (d): d is Dependency => leafIds.has(d.fromId) && d.fromId !== id && leafResult.has(d.fromId)
       )
-      const durationMs = result.durationMs
+      if (deps.length === 0) return
+      // For a container the successor "duration" is its roll-up span, matching
+      // how Pass 1.5 computed the very same constraint (relevant for FF / SF).
+      const roll = isContainer ? rollup.get(id) : undefined
+      const span = roll ? Math.max(0, roll.endMs - roll.startMs) : result.durationMs
       let floor: number | null = null
       deps.forEach(d => {
         const pred = leafResult.get(d.fromId)!
-        const value = constraintFor(d.type, pred.startMs, pred.startMs + pred.durationMs, durationMs, d.lagMs || 0)
+        const value = constraintFor(d.type, pred.startMs, pred.startMs + pred.durationMs, span, d.lagMs || 0)
         floor = floor === null ? value : Math.max(floor, value)
       })
-      if (floor !== null && floor > result.startMs) {
-        result.startMs = Math.max(0, quantize(floor, config.precisionMs, 'ceil'))
+      if (floor === null) return
+      floor = Math.max(0, quantize(floor, config.precisionMs, 'ceil'))
+      if (isContainer) {
+        // A predecessor is a hard lower bound on the container's start. If a
+        // shifted predecessor now ends after the sub-tree start, move the whole
+        // sub-tree by one delta — inner gaps and dependencies are preserved.
+        let r = rollup.get(id)!
+        if (floor > r.startMs) {
+          const delta = floor - r.startMs
+          descendantLeaves(id).forEach(lid => {
+            const leaf = leafResult.get(lid)
+            if (leaf) leaf.startMs += delta
+          })
+          result.clamped = true
+          recomputeRollup()
+          r = rollup.get(id)!
+          result.startMs = r.startMs
+          result.durationMs = Math.max(0, r.endMs - r.startMs)
+          result.constraintMs = floor
+          moved = true
+        }
+      } else if (floor > result.startMs) {
+        result.startMs = floor
         result.clamped = true
         moved = true
       }
+    })
+    if (!moved) break
+  }
+  recomputeRollup()
+
+  // Pass 1.8 — re-anchor predecessor-driven ('auto') leaves onto their FINAL
+  // predecessor times. Pass 1.5 / 1.7 translate a whole sub-tree by one delta
+  // (preserving internal gaps), but a leaf whose clock is owned by predecessors
+  // must instead hug their latest end. A predecessor outside the shifted
+  // sub-tree moves by a different amount, so the uniform shift leaves that leaf
+  // stranded with a stale gap. Here we recompute each such leaf against the
+  // settled predecessor times and snap it onto that floor — clamped to the
+  // ancestor containers' own predecessor floors so a container constraint is
+  // never violated by pulling a descendant earlier. Manual leaves keep their
+  // authored position (only the hard lower bound of Pass 1.7 applies). Iterate
+  // to convergence: re-anchoring a leaf changes the floor of its successors.
+  const ancestorFloor = (id: string): number => {
+    let floor = 0
+    let parentId = byRow.get(id)?.parentId ?? null
+    const seen = new Set<string>()
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId)
+      if (containerIds.has(parentId)) {
+        const c = leafResult.get(parentId)
+        if (c?.constraintMs != null) floor = Math.max(floor, c.constraintMs)
+      }
+      parentId = byRow.get(parentId)?.parentId ?? null
+    }
+    return floor
+  }
+  for (let sweep = 0; sweep < order.length; sweep += 1) {
+    let moved = false
+    order.forEach(id => {
+      const m = byRow.get(id)!
+      const result = leafResult.get(id)
+      if (!result || containerIds.has(id) || !schedulableIds.has(id)) return
+      if (cyclicIds.has(id) || (m.startMode ?? 'auto') !== 'auto') return
+      const deps = (m.predecessors ?? []).filter(
+        (d): d is Dependency => leafIds.has(d.fromId) && d.fromId !== id && leafResult.has(d.fromId)
+      )
+      if (deps.length === 0) return
+      let floor: number | null = null
+      deps.forEach(d => {
+        const pred = leafResult.get(d.fromId)!
+        const value = constraintFor(d.type, pred.startMs, pred.startMs + pred.durationMs, result.durationMs, d.lagMs || 0)
+        floor = floor === null ? value : Math.max(floor, value)
+      })
+      if (floor === null) return
+      floor = Math.max(floor, ancestorFloor(id))
+      floor = Math.max(0, quantize(floor, config.precisionMs, 'ceil'))
+      if (result.startMs !== floor) {
+        result.startMs = floor
+        moved = true
+      }
+    })
+    // Container successors can also be stranded: Pass 1.5 / 1.7 positioned a
+    // whole sub-tree against a predecessor's then-current end, and Pass 1.8 may
+    // have just pulled that predecessor (an auto leaf) earlier. Re-evaluate the
+    // container against the FINAL predecessor times. We only move it when the
+    // predecessor floor actually CHANGED and the sub-tree is still sitting
+    // exactly where the old (stale) floor put it — a container whose sub-tree
+    // naturally starts later was never constraint-driven and must not be pulled
+    // back over its authored leaves. Deepest-first so nested containers compose.
+    const containerFloor = (m: ModuleData, span: number): number | null => {
+      const deps = (m.predecessors ?? []).filter(
+        (d): d is Dependency => leafIds.has(d.fromId) && d.fromId !== m.id && leafResult.has(d.fromId)
+      )
+      let floor: number | null = null
+      deps.forEach(d => {
+        const pred = leafResult.get(d.fromId)!
+        const value = constraintFor(d.type, pred.startMs, pred.startMs + pred.durationMs, span, d.lagMs || 0)
+        floor = floor === null ? value : Math.max(floor, value)
+      })
+      return floor === null ? null : Math.max(0, quantize(floor, config.precisionMs, 'ceil'))
+    }
+    containersDeepFirst.forEach(m => {
+      const result = leafResult.get(m.id)
+      if (!result || result.constraintMs == null) return
+      const oldFloor = result.constraintMs
+      let r = rollup.get(m.id)!
+      const span = Math.max(0, r.endMs - r.startMs)
+      const newFloor = containerFloor(m, span)
+      if (newFloor === null || newFloor === oldFloor) return
+      // Only a sub-tree parked at the stale floor is safe to reposition. If it
+      // starts later on its own, the old predecessor was never binding.
+      const parkedAtStaleFloor = Math.abs(r.startMs - oldFloor) <= config.precisionMs
+      if (newFloor < oldFloor && !parkedAtStaleFloor) return
+      const target = Math.max(newFloor, ancestorFloor(m.id))
+      if (target === r.startMs) {
+        result.constraintMs = newFloor
+        return
+      }
+      const delta = target - r.startMs
+      descendantLeaves(m.id).forEach(id => {
+        const leaf = leafResult.get(id)
+        if (leaf) leaf.startMs += delta
+      })
+      recomputeRollup()
+      r = rollup.get(m.id)!
+      result.startMs = r.startMs
+      result.durationMs = Math.max(0, r.endMs - r.startMs)
+      result.constraintMs = newFloor
+      result.clamped = true
+      moved = true
     })
     if (!moved) break
   }

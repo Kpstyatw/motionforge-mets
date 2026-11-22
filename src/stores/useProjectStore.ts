@@ -8,7 +8,7 @@ import {
 } from '@/types'
 import { useHistoryStore } from './useHistoryStore'
 import {
-  collectDescendantIds, computeSchedule, normalizeModules,
+  collectDescendantIds, computeSchedule, defaultNewNodeStartMs, normalizeModules,
   renumberHierarchyCodes, syncLegacyFields, wouldCreateCycle, wouldCreateHierarchyConflict
 } from '@/lib/dependencyEngine'
 import {
@@ -664,7 +664,11 @@ export const useProjectStore = create<ProjectState>()(
       // Child-driven model: every action/sub-action is authored on absolute
       // time. A container's displayed time is rolled up from its children by
       // the scheduler, so the authored start here is just its initial position.
-      const startMs = Math.max(0, quantize(options?.startMs ?? parent?.startMs ?? 0, cfg.precisionMs, 'round'))
+      // Defaults: a new action starts at 0; a new sub-action lines up with its
+      // parent's current start. With no predecessor the anchor holds; adding one
+      // hands the clock over to computeSchedule (startMode stays 'auto').
+      const defaultStart = defaultNewNodeStartMs(kind, parent?.startMs)
+      const startMs = Math.max(0, quantize(options?.startMs ?? defaultStart, cfg.precisionMs, 'round'))
       const durationMs = isSummary ? 0 : quantize(options?.durationMs ?? cfg.scaleMs * 10, cfg.precisionMs, 'ceil')
       const displayName = options?.actionDescription
         ?? (kind === 'module' ? '新模块' : kind === 'mechanism' ? '新机构' : kind === 'subaction' ? '新子动作' : '新动作')

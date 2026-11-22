@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
-import { computeSchedule } from '@/lib/dependencyEngine'
+import { computeSchedule, defaultNewNodeStartMs } from '@/lib/dependencyEngine'
 import { normalizeTimeConfig } from '@/lib/timeScale'
 import { checkNewName, NameIssue, translateNameIssue } from '@/lib/nameValidation'
 import { toast } from '@/components/ui/use-toast'
@@ -44,10 +44,11 @@ export const AddNodeDialog: React.FC<AddNodeDialogProps> = ({ parentId, onClose,
   const [startMs, setStartMs] = useState('')
   const nameRef = useRef<HTMLInputElement>(null)
 
-  // Child-driven model: every action/sub-action is authored on absolute time.
-  // A new child starts where its parent currently ends, so it does not overlap
-  // existing siblings; the Add dialog and the Task editor show the same clock.
-  const defaultStart = (_k: TaskKind): string => parent ? String(parent.endMs) : '0'
+  // Child-driven model: a new action starts at 0; a new sub-action lines up
+  // with its parent's current start. The clock stays there until a predecessor
+  // is added, then follows the dependency. Shared with the store so the
+  // dialog preview and the stored node always agree.
+  const defaultStart = (k: TaskKind): string => String(defaultNewNodeStartMs(k, parent?.startMs))
 
   useEffect(() => {
     const k = defaultKind()

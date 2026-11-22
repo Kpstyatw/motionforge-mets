@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { v4 as uuidv4 } from 'uuid'
 import { ModuleData, TaskKind, TimeConfig } from '@/types'
 import {
-  collectDescendantIds, computeSchedule, flattenTree, hierarchyPath,
+  collectDescendantIds, computeSchedule, defaultNewNodeStartMs, flattenTree, hierarchyPath,
   renumberHierarchyCodes, resolvePredecessorLeaf, syncLegacyFields,
   wouldCreateCycle, wouldCreateHierarchyConflict
 } from './dependencyEngine'
@@ -388,6 +388,24 @@ describe('hierarchy vs predecessor conflict', () => {
   })
 })
 
+describe('defaultNewNodeStartMs', () => {
+  it('starts a new action at 0 even under a parent that starts later', () => {
+    expect(defaultNewNodeStartMs('action', 5000)).toBe(0)
+    expect(defaultNewNodeStartMs('module')).toBe(0)
+    expect(defaultNewNodeStartMs('mechanism', 3000)).toBe(0)
+  })
+
+  it('starts a new sub-action at the parent start', () => {
+    expect(defaultNewNodeStartMs('subaction', 5000)).toBe(5000)
+  })
+
+  it('clamps a missing or negative parent start to 0', () => {
+    expect(defaultNewNodeStartMs('subaction')).toBe(0)
+    expect(defaultNewNodeStartMs('subaction', null)).toBe(0)
+    expect(defaultNewNodeStartMs('subaction', -100)).toBe(0)
+  })
+})
+
 describe('resolvePredecessorLeaf (UI container -> latest leaf)', () => {
   const tree = () => {
     const m = { ...task({ id: 'M', moduleName: '模块', durationMs: 0, parentId: null }), kind: 'module' as TaskKind }
@@ -438,5 +456,124 @@ describe('cross-container dependency with container shift', () => {
     // SA shifts to T end (1000); B must not start before SA's shifted end (1100).
     expect(s.byId.SA.startMs).toBe(1000)
     expect(s.byId.B.startMs).toBeGreaterThanOrEqual(s.byId.SA.endMs)
+  })
+
+  it('a CONTAINER successor waits for a predecessor leaf that shifts later in a deeper container', () => {
+    // Regression for the real project case 03.01.03 <- 03.01.06.04:
+    // container A owns leaf SA and has its own predecessor T; container B is
+    // positioned in Pass 1.5 against SA's *authored* end, then A's sub-tree is
+    // shifted later by T. Pass 1.7 must re-evaluate B on SA's NEW end and shift
+    // B's whole sub-tree — otherwise B keeps a stale, too-early start.
+    const m = { ...task({ id: 'M', durationMs: 0, parentId: null }), kind: 'module' as TaskKind }
+    const k = { ...task({ id: 'K', durationMs: 0, parentId: 'M' }), kind: 'mechanism' as TaskKind }
+    const t = task({ id: 'T', startMs: 0, durationMs: 2000, parentId: 'K' })
+    // A is a container; its authored window (SA at 500-1000) is BEFORE its
+    // predecessor T's end (2000), so Pass 1.5 shifts A's whole sub-tree +1500.
+    const a = { ...task({ id: 'A', startMs: 500, durationMs: 0, parentId: 'K', predecessors: [dep('T')] }) }
+    const sa = task({ id: 'SA', startMs: 500, durationMs: 500, parentId: 'A', kind: 'subaction' })
+    // B is also a container with predecessor SA, but its authored window
+    // (SB at 1500) is already past SA's AUTHORED end (1000), so Pass 1.5 leaves
+    // B untouched. Row order puts B before A, so SA has not moved yet at that
+    // point — this is the stale-time window the fix must close.
+    const b = { ...task({ id: 'B', startMs: 1500, durationMs: 0, parentId: 'K', predecessors: [dep('SA')] }) }
+    const sb = task({ id: 'SB', startMs: 1500, durationMs: 200, parentId: 'B', kind: 'subaction' })
+
+    const s = computeSchedule([m, k, t, b, sb, a, sa], CONFIG)
+    // A shifts so SA ends at 2500.
+    expect(s.byId.SA.startMs).toBe(2000)
+    expect(s.byId.SA.endMs).toBe(2500)
+    // B must be re-positioned to SA's NEW end (2500), not left at 1500.
+    expect(s.byId.B.startMs).toBe(s.byId.SA.endMs)
+    expect(s.byId.SB.startMs).toBe(s.byId.SA.endMs)
+  })
+
+  it('an AUTO leaf re-anchors to the latest final predecessor end after its container shifts', () => {
+    // Regression for the real project case 03.01.03.02:
+    // - container A is pushed late by its own predecessor T (whole sub-tree +delta);
+    // - manual sibling M1 inside A shifts along and ends at 2100;
+    // - outside leaf X barely moves and ends at 1100;
+    // - auto leaf L is authored against X's ORIGINAL end (1100), then the uniform
+    //   shift drags it to 2900. The latest FINAL predecessor end is M1's 2100,
+    //   so L must hug 2100 — not sit 1800 ms idle after both predecessors.
+    const m = { ...task({ id: 'M', durationMs: 0, parentId: null }), kind: 'module' as TaskKind }
+    const k = { ...task({ id: 'K', durationMs: 0, parentId: 'M' }), kind: 'mechanism' as TaskKind }
+    const t = task({ id: 'T', startMs: 0, durationMs: 2000, parentId: 'K' })
+    const x = task({ id: 'X', startMs: 1000, durationMs: 100, parentId: 'K' })
+    const a = { ...task({ id: 'A', startMs: 200, durationMs: 0, parentId: 'K', predecessors: [dep('T')] }) }
+    const m1 = task({ id: 'M1', startMs: 200, durationMs: 100, parentId: 'A', kind: 'subaction', startMode: 'manual' })
+    const l = task({ id: 'L', startMs: 0, durationMs: 150, parentId: 'A', kind: 'subaction', predecessors: [dep('M1'), dep('X')] })
+
+    const s = computeSchedule([m, k, t, x, a, m1, l], CONFIG)
+    expect(s.byId.M1.startMs).toBe(2000)
+    expect(s.byId.M1.endMs).toBe(2100)
+    expect(s.byId.X.endMs).toBe(1100)
+    // The auto leaf hugs the latest final predecessor end (M1 = 2100), and is
+    // never pulled before its container's own predecessor floor (T end = 2000).
+    expect(s.byId.L.startMs).toBe(s.byId.M1.endMs)
+    expect(s.byId.L.startMs).not.toBe(2900)
+  })
+
+  it('a MANUAL leaf keeps its authored position after the same container shift', () => {
+    const m = { ...task({ id: 'M', durationMs: 0, parentId: null }), kind: 'module' as TaskKind }
+    const k = { ...task({ id: 'K', durationMs: 0, parentId: 'M' }), kind: 'mechanism' as TaskKind }
+    const t = task({ id: 'T', startMs: 0, durationMs: 2000, parentId: 'K' })
+    const x = task({ id: 'X', startMs: 1000, durationMs: 100, parentId: 'K' })
+    const a = { ...task({ id: 'A', startMs: 200, durationMs: 0, parentId: 'K', predecessors: [dep('T')] }) }
+    const m1 = task({ id: 'M1', startMs: 200, durationMs: 100, parentId: 'A', kind: 'subaction', startMode: 'manual' })
+    // Manual leaf: authored 1100, dependencies only act as a hard lower bound.
+    const l = task({
+      id: 'L', startMs: 1100, durationMs: 150, parentId: 'A', kind: 'subaction',
+      startMode: 'manual', predecessors: [dep('M1'), dep('X')]
+    })
+
+    const s = computeSchedule([m, k, t, x, a, m1, l], CONFIG)
+    // Shifted by the container's +1800 delta; NOT re-anchored onto M1's end.
+    expect(s.byId.L.startMs).toBe(2900)
+  })
+
+  it('a CONTAINER successor follows an auto leaf that Pass 1.8 pulls back', () => {
+    // Real project case 03.01.04 <- 03.01.03.04:
+    // container A is pushed late by predecessor T (whole sub-tree shifted);
+    // auto leaf M2 has an EXTERNAL predecessor X that did NOT shift with A, so
+    // Pass 1 places M2 against X's original end and the uniform shift drags it
+    // far past its true floor. Pass 1.8 re-anchors M2 onto the latest final
+    // predecessor end, pulling the chain (M2 -> M3) back. Container B was
+    // positioned in Pass 1.5/1.7 against M3's STALE end and must now follow its
+    // real end — otherwise B keeps a large stale gap.
+    const m = { ...task({ id: 'M', durationMs: 0, parentId: null }), kind: 'module' as TaskKind }
+    const k = { ...task({ id: 'K', durationMs: 0, parentId: 'M' }), kind: 'mechanism' as TaskKind }
+    const t = task({ id: 'T', startMs: 0, durationMs: 2000, parentId: 'K' })
+    const x = task({ id: 'X', startMs: 1000, durationMs: 100, parentId: 'K' }) // external, does not shift with A
+    const a = { ...task({ id: 'A', startMs: 200, durationMs: 0, parentId: 'K', predecessors: [dep('T')] }) }
+    const m1 = task({ id: 'M1', startMs: 200, durationMs: 100, parentId: 'A', kind: 'subaction', startMode: 'manual' })
+    const m2 = task({ id: 'M2', startMs: 0, durationMs: 150, parentId: 'A', kind: 'subaction', predecessors: [dep('M1'), dep('X')] })
+    const m3 = task({ id: 'M3', startMs: 0, durationMs: 100, parentId: 'A', kind: 'subaction', predecessors: [dep('M2')] })
+    const b = { ...task({ id: 'B', startMs: 200, durationMs: 0, parentId: 'K', predecessors: [dep('M3')] }) }
+    const b1 = task({ id: 'B1', startMs: 200, durationMs: 100, parentId: 'B' })
+
+    const s = computeSchedule([m, k, t, x, a, m1, m2, m3, b, b1], CONFIG)
+    // A's auto chain hugs the manual head after the shift (M1 ends 2100).
+    expect(s.byId.M1.startMs).toBe(2000)
+    expect(s.byId.M2.startMs).toBe(s.byId.M1.endMs)
+    expect(s.byId.M3.startMs).toBe(s.byId.M2.endMs)
+    // B must sit exactly at M3's FINAL end (2350), not the stale 3150.
+    expect(s.byId.B.startMs).toBe(s.byId.M3.endMs)
+    expect(s.byId.B1.startMs).toBe(s.byId.M3.endMs)
+  })
+
+  it('does not pull a container back when its sub-tree naturally starts later', () => {
+    // Guard: the container correction must not override authored leaf times. A
+    // container whose predecessor ends early but whose leaves are authored well
+    // after it was never constraint-positioned, so it must stay put.
+    const m = { ...task({ id: 'M', durationMs: 0, parentId: null }), kind: 'module' as TaskKind }
+    const k = { ...task({ id: 'K', durationMs: 0, parentId: 'M' }), kind: 'mechanism' as TaskKind }
+    const p = task({ id: 'P', startMs: 0, durationMs: 100, parentId: 'K' })
+    const a = { ...task({ id: 'A', startMs: 900, durationMs: 0, parentId: 'K', predecessors: [dep('P')] }) }
+    const a1 = task({ id: 'A1', startMs: 900, durationMs: 100, parentId: 'A', kind: 'subaction', startMode: 'manual' })
+
+    const s = computeSchedule([m, k, p, a, a1], CONFIG)
+    // P ends at 100; A1 is authored at 900. Predecessor is only a lower bound.
+    expect(s.byId.A1.startMs).toBe(900)
+    expect(s.byId.A.startMs).toBe(900)
   })
 })

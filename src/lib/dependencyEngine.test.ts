@@ -3,7 +3,8 @@ import { v4 as uuidv4 } from 'uuid'
 import { ModuleData, TaskKind, TimeConfig } from '@/types'
 import {
   collectDescendantIds, computeSchedule, flattenTree, hierarchyPath,
-  renumberHierarchyCodes, syncLegacyFields, wouldCreateCycle, wouldCreateHierarchyConflict
+  renumberHierarchyCodes, resolvePredecessorLeaf, syncLegacyFields,
+  wouldCreateCycle, wouldCreateHierarchyConflict
 } from './dependencyEngine'
 import { DEFAULT_TIME_CONFIG, normalizeTimeConfig, parseTimeInput, quantize } from './timeScale'
 import { computeTotalDurationMs } from './timingModel'
@@ -384,6 +385,42 @@ describe('hierarchy vs predecessor conflict', () => {
     const { modules, s1 } = tree()
     const other = task({ id: 'X', startMs: 0, durationMs: 100, parentId: s1.id, kind: 'subaction' })
     expect(wouldCreateHierarchyConflict([...modules, other], other.id, 'S2')).toBe(false)
+  })
+})
+
+describe('resolvePredecessorLeaf (UI container -> latest leaf)', () => {
+  const tree = () => {
+    const m = { ...task({ id: 'M', moduleName: '模块', durationMs: 0, parentId: null }), kind: 'module' as TaskKind }
+    const k = { ...task({ id: 'K', moduleName: '机构', durationMs: 0, parentId: 'M' }), kind: 'mechanism' as TaskKind }
+    const a = task({ id: 'A', startMs: 0, durationMs: 0, parentId: 'K' })
+    const s1 = task({ id: 'S1', startMs: 100, durationMs: 80, parentId: 'A', kind: 'subaction' })
+    const s2 = task({ id: 'S2', startMs: 400, durationMs: 120, parentId: 'A', kind: 'subaction' })
+    const peer = task({ id: 'B', startMs: 200, durationMs: 50, parentId: 'K' })
+    return { modules: [m, k, a, s1, s2, peer] }
+  }
+
+  it('maps a leaf to itself', () => {
+    const schedule = computeSchedule(tree().modules, CONFIG)
+    expect(resolvePredecessorLeaf(schedule, 'S1')).toBe('S1')
+  })
+
+  it('maps a container to the latest-ending leaf in its sub-tree', () => {
+    const schedule = computeSchedule(tree().modules, CONFIG)
+    // S2 ends at 520, S1 at 180 -> latest is S2.
+    expect(resolvePredecessorLeaf(schedule, 'A')).toBe('S2')
+  })
+
+  it('honours nested sub-actions when picking the latest leaf', () => {
+    const base = tree().modules
+    const nested = task({ id: 'S2a', startMs: 500, durationMs: 90, parentId: 'S2', kind: 'subaction' })
+    const schedule = computeSchedule([...base, nested], CONFIG)
+    // S2 is now a container (rolls up to S2a at 590); S1 is the only other leaf.
+    expect(resolvePredecessorLeaf(schedule, 'A')).toBe('S2a')
+  })
+
+  it('returns null for an id that is not in the schedule', () => {
+    const schedule = computeSchedule(tree().modules, CONFIG)
+    expect(resolvePredecessorLeaf(schedule, 'missing')).toBeNull()
   })
 })
 

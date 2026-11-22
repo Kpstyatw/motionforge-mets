@@ -283,6 +283,42 @@ export function collectDescendantIds(modules: ModuleData[], rootId: string): str
   return out
 }
 
+/**
+ * Resolve a predecessor *choice* to the concrete leaf whose completion the
+ * dependency should actually wait for.
+ *
+ * Containers (a parent action / sub-action with children) derive their time
+ * from their sub-tree only in a later roll-up pass, so pointing a dependency
+ * at the container id directly would hand the scheduler a stale time. The
+ * editor therefore lets users *pick* a container but stores the dependency on
+ * the latest-ending leaf in that container's sub-tree — "wait until this whole
+ * group is done" — leaving the scheduling engine untouched.
+ *
+ * A leaf maps to itself; a container maps to its latest-ending descendant
+ * leaf. Returns `null` only for an empty sub-tree (no schedulable leaf).
+ */
+export function resolvePredecessorLeaf(schedule: ScheduleResult, candidateId: string): string | null {
+  const candidate = schedule.byId[candidateId]
+  if (!candidate) return null
+  if (candidate.isLeaf) return candidate.id
+  let bestId: string | null = null
+  let bestEnd = -Infinity
+  const walk = (id: string) => {
+    const node = schedule.byId[id]
+    if (!node) return
+    if (node.isLeaf) {
+      if (node.endMs > bestEnd) {
+        bestEnd = node.endMs
+        bestId = node.id
+      }
+      return
+    }
+    node.childIds.forEach(walk)
+  }
+  walk(candidateId)
+  return bestId
+}
+
 function depthOf(m: ModuleData, byId: Map<string, ModuleData>): number {
   let depth = 0
   let parent = m.parentId ? byId.get(m.parentId) : undefined

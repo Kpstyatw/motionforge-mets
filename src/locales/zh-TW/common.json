@@ -549,7 +549,7 @@
     "activeSlotHint": "按動作所屬週期解析到當前選中槽位",
     "editResource": "編輯該資源（名稱 / 歸屬 / 類型 / 旋轉）",
     "addNew": "新建一個資源（如需，展開後填寫名稱再點新增）",
-    "editFocusHint": "正在編輯下方高亮的資源：直接改名稱 / 類型 / 歸屬即可，改完按 Enter 或點別處自動儲存，無需再點「新增」。「新增」只用來建立一個新資源。",
+    "editFocusHint": "目前只顯示選取資源：直接改名稱 / 類型 / 歸屬 / 旋轉即可，改完自動儲存。點左上「全部資源」返回列表。",
     "manualMode": "手動時長",
     "eventMode": "綁定動作",
     "eventModeHint": "視窗由起止動作事件決定",
@@ -567,7 +567,13 @@
     "invalidRef": "引用失效",
     "addFailed": "新增占用失敗，請檢查引用是否有效",
     "editClaim": "編輯占用",
-    "cancelEdit": "取消編輯"
+    "cancelEdit": "取消編輯",
+    "toggleDetail": "展開/收起詳細設定（歸屬、旋轉）",
+    "showAll": "全部資源",
+    "showAllTip": "返回資源列表，顯示全部資源",
+    "editOneTitle": "編輯資源",
+    "editAlone": "僅編輯該資源（隱藏其它資源）",
+    "focusGone": "該資源已不存在，請返回全部資源列表。"
   },
   "cycle": {
     "title": "固定週期設定",

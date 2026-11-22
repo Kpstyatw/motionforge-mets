@@ -549,7 +549,7 @@
     "activeSlotHint": "Resolved to the selected slot for the action's cycle",
     "editResource": "Edit this resource (name / owner / type / rotation)",
     "addNew": "Create a new resource (expand, enter a name, then Add)",
-    "editFocusHint": "Editing the highlighted resource below: just change its name / type / owner and press Enter or click away to save — no need to press “Add”. “Add” only creates a separate new resource.",
+    "editFocusHint": "Only the selected resource is shown: edit name / type / owner / rotation directly — changes save automatically. Click “All resources” top-left to go back.",
     "manualMode": "Manual duration",
     "eventMode": "Bind to actions",
     "eventModeHint": "Window decided by two action events",
@@ -567,7 +567,13 @@
     "invalidRef": "reference lost",
     "addFailed": "Failed to add the claim; check the references",
     "editClaim": "Edit claim",
-    "cancelEdit": "Cancel edit"
+    "cancelEdit": "Cancel edit",
+    "toggleDetail": "Expand/collapse details (owner, rotation)",
+    "showAll": "All resources",
+    "showAllTip": "Back to the full resource list",
+    "editOneTitle": "Edit resource",
+    "editAlone": "Edit only this resource (hide the others)",
+    "focusGone": "This resource no longer exists. Return to the full list."
   },
   "cycle": {
     "title": "Fixed cycle settings",

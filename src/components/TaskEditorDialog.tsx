@@ -2,7 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MODULE_COLORS, useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
-import { collectDescendantIds, computeSchedule, wouldCreateCycle, wouldCreateHierarchyConflict } from '@/lib/dependencyEngine'
+import {
+  collectDescendantIds, computeSchedule, resolvePredecessorLeaf,
+  wouldCreateCycle, wouldCreateHierarchyConflict
+} from '@/lib/dependencyEngine'
 import { canBeParentOf } from '@/lib/hierarchy'
 import { normalizeTimeConfig, parseTimeInput, quantize, describeDuration } from '@/lib/timeScale'
 import { NameIssue, translateNameIssue } from '@/lib/nameValidation'
@@ -131,25 +134,42 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
     }
   }
 
-  const candidatePredecessors = schedule.tasks.filter(candidate =>
-    candidate.isLeaf &&
-    candidate.id !== task.id &&
-    !wouldCreateCycle(project.modules, task.id, candidate.id) &&
-    !wouldCreateHierarchyConflict(project.modules, task.id, candidate.id) &&
-    !(task.module.predecessors ?? []).some(d => d.fromId === candidate.id)
-  )
+  // Candidates include leaves and any action / sub-action container that has no
+  // blood relation to this task. A container is a *choice* ("wait until the
+  // whole group is done") but the dependency is stored on its latest-ending
+  // leaf — see resolvePredecessorLeaf. Physical module/mechanism summaries are
+  // excluded (they own no timing), and ancestor/descendant edges stay forbidden.
+  const existingFromIds = new Set((task.module.predecessors ?? []).map(d => d.fromId))
+  const candidatePredecessors = schedule.tasks.flatMap(candidate => {
+    if (candidate.id === task.id || candidate.isSummary) return []
+    const isActionContainer = !candidate.isLeaf &&
+      (candidate.kind === 'action' || candidate.kind === 'subaction')
+    if (!candidate.isLeaf && !isActionContainer) return []
+    if (wouldCreateHierarchyConflict(project.modules, task.id, candidate.id)) return []
+    const fromId = resolvePredecessorLeaf(schedule, candidate.id)
+    if (!fromId || existingFromIds.has(fromId)) return []
+    if (wouldCreateCycle(project.modules, task.id, fromId)) return []
+    return [{
+      id: candidate.id,
+      fromId,
+      label: `${candidate.code} · ${candidate.module.actionDescription}` +
+        (isActionContainer ? t('gantt.groupDone', { defaultValue: '（整组完成后）' }) : '')
+    }]
+  })
 
   const successors = (schedule.successors[task.id] ?? [])
     .map(id => schedule.byId[id])
     .filter(Boolean)
 
   const handleAddPredecessor = () => {
-    const fromId = newPredId || candidatePredecessors[0]?.id
-    if (!fromId) {
+    // A previously selected option can disappear once another dependency was
+    // added; fall back to the first remaining candidate instead of failing.
+    const choice = candidatePredecessors.find(c => c.id === newPredId) ?? candidatePredecessors[0]
+    if (!choice) {
       toast({ title: t('gantt.noCandidate', { defaultValue: '没有可添加的前置任务' }) })
       return
     }
-    const ok = addPredecessor(task.id, fromId, 'FS', 0)
+    const ok = addPredecessor(task.id, choice.fromId, 'FS', 0)
     if (!ok) toast({ variant: 'destructive', title: scheduleWarnings[0] ?? t('gantt.cycleBlocked', { defaultValue: '会形成循环依赖' }) })
     else setNewPredId('')
   }
@@ -348,7 +368,7 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
                     value={newPredId} onChange={e => setNewPredId(e.target.value)}>
                     <option value="">{t('gantt.selectPred', { defaultValue: '选择前置任务' })}</option>
                     {candidatePredecessors.map(c => (
-                      <option key={c.id} value={c.id}>{c.code} · {c.module.actionDescription}</option>
+                      <option key={c.id} value={c.id} title={t('gantt.groupDoneHint', { defaultValue: '选中整组时，实际等待该组最晚结束的子动作' })}>{c.label}</option>
                     ))}
                   </select>
                   <button onClick={handleAddPredecessor} className="px-2 py-1 text-xs border rounded hover:bg-accent flex items-center gap-1">

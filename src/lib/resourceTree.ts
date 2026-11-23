@@ -166,3 +166,16 @@ export function buildResourceOwnerIndex(
   }
   return owners
 }
+
+/** Case-insensitive catalogue filter over name / type / owning module or mechanism. */
+export function filterResourceRows(
+  resources: Resource[], owners: Map<string, ResourceOwner>, query: string
+): Resource[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return resources
+  return resources.filter(r => {
+    const owner = owners.get(r.id)
+    return [r.name, r.type ?? '', owner?.moduleName ?? '', owner?.mechanismName ?? '']
+      .some(value => value.toLowerCase().includes(q))
+  })
+}

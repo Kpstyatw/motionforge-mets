@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
-import { resourceDepth, buildResourceOwnerIndex } from '@/lib/resourceTree'
+import { resourceDepth, buildResourceOwnerIndex, filterResourceRows } from '@/lib/resourceTree'
 import { checkNewName, findNameIssues, NameIssue, translateNameIssue } from '@/lib/nameValidation'
 import { toast } from '@/components/ui/use-toast'
 import { Resource } from '@/types'
@@ -55,6 +55,11 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
   // pencil (focusResourceId set) collapse the "add new" form so there is only
   // ONE name field on screen; users can still expand it to create another one.
   const [showAddForm, setShowAddForm] = useState(!focusResourceId)
+  // The catalogue is hidden until asked for: opening the manager to add a
+  // resource should not dump a long list on screen. Focus-edit mode always
+  // shows its one resource regardless of this flag.
+  const [listVisible, setListVisible] = useState(Boolean(focusResourceId))
+  const [search, setSearch] = useState('')
   // Focus-edit mode: when opened from a lane (or a row's edit action), show
   // ONLY that resource with full details. Null means the full compact list.
   const [onlyId, setOnlyId] = useState<string | null>(focusResourceId ?? null)
@@ -65,10 +70,11 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
   const lastFocus = useRef<string | null>(null)
   const [focusPulse, setFocusPulse] = useState<string | null>(null)
   useEffect(() => {
-    if (!isOpen) { setDrafts({}); lastFocus.current = null; setFocusPulse(null) }
+    if (!isOpen) { setDrafts({}); lastFocus.current = null; setFocusPulse(null); setSearch('') }
     else {
       setShowAddForm(!focusResourceId)
       setOnlyId(focusResourceId ?? null)
+      setListVisible(Boolean(focusResourceId))
     }
   }, [isOpen, focusResourceId])
   useEffect(() => {
@@ -112,6 +118,9 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
   // Reverse index: resource id → owning flow node, derived the same way as
   // the resource-lane view, so the dropdown always mirrors what the chart shows.
   const ownerIndex = buildResourceOwnerIndex(project.modules, project.resources)
+  // Focus-edit bypasses search (a single known row). The full catalogue can be
+  // narrowed by name, type or owning node.
+  const visibleResources = onlyId ? resources : filterResourceRows(resources, ownerIndex, search)
   const moduleById = new Map(project.modules.map(m => [m.id, m]))
   const nodeName = (m: { moduleName?: string; actionDescription?: string; code?: string; id: string }) =>
     m.moduleName || m.actionDescription || m.code || m.id
@@ -184,6 +193,12 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
     }
     setName('')
     setType('')
+    // The catalogue stays collapsed after adding, so confirm the write here
+    // instead of making the user open the list to check.
+    toast({
+      title: t('resource.added', { defaultValue: '资源已添加', name: trimmed }),
+      description: t('resource.addedHint', { defaultValue: '展开「已有资源」可查看或继续编辑。' })
+    })
   }
 
   const inputClass = 'w-full px-2 py-1 text-sm border rounded bg-background'
@@ -217,8 +232,23 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
             </div>
           )}
 
-          <section className="border rounded-lg divide-y">
-            {resources.map(r => {
+          {!onlyId && (
+            <button onClick={() => setListVisible(v => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 text-xs border rounded-lg hover:bg-accent/50">
+              <span className="flex items-center gap-1 font-medium">
+                {listVisible ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                {t('resource.existingResources', { defaultValue: '已有资源', count: resources.length })}
+              </span>
+              <span className="text-muted-foreground">{listVisible ? '−' : '+'}</span>
+            </button>
+          )}
+          {!onlyId && listVisible && (
+            <input className={inputClass} value={search} onChange={e => setSearch(e.target.value)}
+              placeholder={t('resource.searchResources', { defaultValue: '搜索名称 / 类型 / 归属' })} />
+          )}
+          {(listVisible || onlyId) && (
+          <section className="border rounded-lg divide-y max-h-[320px] overflow-y-auto">
+            {visibleResources.map(r => {
               const depth = resourceDepth(r.id, project.resources)
               const childCount = project.resources.filter(x => x.parentId === r.id).length
               const usage = project.allocations.filter(a => a.resourceId === r.id).length
@@ -383,14 +413,17 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
                 </div>
               )
             })}
-            {resources.length === 0 && (
+            {visibleResources.length === 0 && (
               <div className="p-4 text-center text-xs text-muted-foreground">
                 {onlyId
                   ? t('resource.focusGone', { defaultValue: '该资源已不存在，请返回全部资源列表。' })
-                  : t('resource.emptyShort', { defaultValue: '暂无资源' })}
+                  : search.trim()
+                    ? t('resource.noMatchResources', { defaultValue: '没有匹配的资源' })
+                    : t('resource.emptyShort', { defaultValue: '暂无资源' })}
               </div>
             )}
           </section>
+          )}
 
           <section className="border rounded-lg">
             <button onClick={() => setShowAddForm(v => !v)} className="w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/50 rounded-lg">

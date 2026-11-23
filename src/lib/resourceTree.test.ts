@@ -3,7 +3,7 @@ import { ModuleData, Resource, ResourceAllocation, RotaryMotion, TaskKind } from
 import { computeSchedule } from './dependencyEngine'
 import { DEFAULT_TIME_CONFIG } from './timeScale'
 import {
-  buildResourceOwnerIndex, claimsShareDomain, isResourceAncestor,
+  buildResourceOwnerIndex, claimsShareDomain, filterResourceRows, isResourceAncestor,
   resolveClaimResourceId, resourceChain, resourceDepth, selectedSlotIndex
 } from './resourceTree'
 import { computeResourceSchedule } from './resourceScheduler'
@@ -31,6 +31,33 @@ const TREE: Resource[] = [
   { id: 'H2', name: '孔3', parentId: 'PLATE', slotIndex: 2 },
   { id: 'GRIP', name: '抓手' }
 ]
+
+describe('resource catalogue filtering', () => {
+  const modules: ModuleData[] = [
+    node('M1', 'module', null, 0, 0),
+    node('MECH', 'mechanism', 'M1', 0, 0)
+  ]
+  const catalogue: Resource[] = [
+    { id: 'R1', name: '取血抓手', type: 'gripper', ownerNodeId: 'MECH' },
+    { id: 'R2', name: '清洗盘', type: 'plate', ownerNodeId: 'M1' },
+    { id: 'R3', name: '电机', type: 'motor' }
+  ]
+  const owners = buildResourceOwnerIndex(modules, catalogue)
+
+  it('returns the whole catalogue for a blank query', () => {
+    expect(filterResourceRows(catalogue, owners, '   ')).toHaveLength(3)
+  })
+
+  it('matches name, type and owning node case-insensitively', () => {
+    expect(filterResourceRows(catalogue, owners, '抓手').map(r => r.id)).toEqual(['R1'])
+    expect(filterResourceRows(catalogue, owners, 'MOTOR').map(r => r.id)).toEqual(['R3'])
+    expect(filterResourceRows(catalogue, owners, '清洗盘机构').map(r => r.id)).toEqual(['R1'])
+  })
+
+  it('returns nothing for a miss', () => {
+    expect(filterResourceRows(catalogue, owners, 'not-found')).toEqual([])
+  })
+})
 
 describe('resource phase engine', () => {
   it('selects successive slots per cycle and wraps around', () => {

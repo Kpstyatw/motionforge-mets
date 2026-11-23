@@ -551,7 +551,7 @@
     "activeSlot": "当前选中槽位",
     "activeSlotHint": "按动作所属周期解析到当前选中槽位",
     "editResource": "编辑该资源（名称 / 归属 / 类型 / 旋转）",
-    "addNew": "新建一个资源（如需要，展开填写名称后点添加）",
+    "addNew": "新建一个资源（填写名称后点添加）",
     "editFocusHint": "当前只显示选中资源：直接改名称 / 类型 / 归属 / 旋转即可，改完自动保存。点左上「全部资源」返回列表。",
     "manualMode": "手动时长",
     "eventMode": "绑定动作",
@@ -576,7 +576,12 @@
     "showAllTip": "返回资源列表，显示全部资源",
     "editOneTitle": "编辑资源",
     "editAlone": "仅编辑该资源（隐藏其它资源）",
-    "focusGone": "该资源已不存在，请返回全部资源列表。"
+    "focusGone": "该资源已不存在，请返回全部资源列表。",
+    "existingResources": "已有资源（{{count}}）",
+    "searchResources": "搜索名称 / 类型 / 归属",
+    "noMatchResources": "没有匹配的资源",
+    "added": "已添加资源「{{name}}」",
+    "addedHint": "展开「已有资源」可查看或继续编辑。"
   },
   "cycle": {
     "title": "固定周期设置",

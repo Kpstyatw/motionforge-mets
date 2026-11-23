@@ -551,7 +551,7 @@
     "activeSlot": "Current selected slot",
     "activeSlotHint": "Resolved to the selected slot for the action's cycle",
     "editResource": "Edit this resource (name / owner / type / rotation)",
-    "addNew": "Create a new resource (expand, enter a name, then Add)",
+    "addNew": "Create a new resource (enter a name, then Add)",
     "editFocusHint": "Only the selected resource is shown: edit name / type / owner / rotation directly — changes save automatically. Click “All resources” top-left to go back.",
     "manualMode": "Manual duration",
     "eventMode": "Bind to actions",
@@ -576,7 +576,12 @@
     "showAllTip": "Back to the full resource list",
     "editOneTitle": "Edit resource",
     "editAlone": "Edit only this resource (hide the others)",
-    "focusGone": "This resource no longer exists. Return to the full list."
+    "focusGone": "This resource no longer exists. Return to the full list.",
+    "existingResources": "Existing resources ({{count}})",
+    "searchResources": "Search name / type / owner",
+    "noMatchResources": "No matching resources",
+    "added": "Resource added: {{name}}",
+    "addedHint": "Expand Existing resources to view or keep editing."
   },
   "cycle": {
     "title": "Fixed cycle settings",

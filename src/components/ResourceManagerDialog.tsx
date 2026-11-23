@@ -42,6 +42,9 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
   } = useProjectStore()
   const [name, setName] = useState('')
   const [type, setType] = useState('')
+  // Owner chosen in the "new resource" form. Pre-filled from the focused
+  // resource so adding a sibling under the same module/mechanism is one click.
+  const [newOwnerId, setNewOwnerId] = useState('')
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   // Which resource's owner picker is currently showing the "new node" form.
   const [addingOwnerFor, setAddingOwnerFor] = useState<string | null>(null)
@@ -70,11 +73,17 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
   const lastFocus = useRef<string | null>(null)
   const [focusPulse, setFocusPulse] = useState<string | null>(null)
   useEffect(() => {
-    if (!isOpen) { setDrafts({}); lastFocus.current = null; setFocusPulse(null); setSearch('') }
+    if (!isOpen) { setDrafts({}); lastFocus.current = null; setFocusPulse(null); setSearch(''); setNewOwnerId('') }
     else {
       setShowAddForm(!focusResourceId)
       setOnlyId(focusResourceId ?? null)
       setListVisible(Boolean(focusResourceId))
+      // Default the new-resource owner to the focused resource's owner, so a
+      // sibling resource lands in the same module/mechanism lane by default.
+      const focused = focusResourceId
+        ? useProjectStore.getState().project?.resources.find(r => r.id === focusResourceId)
+        : undefined
+      setNewOwnerId(focused?.ownerNodeId ?? '')
     }
   }, [isOpen, focusResourceId])
   useEffect(() => {
@@ -186,13 +195,19 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
       rejectName({ scope: 'resource', id: '', name: trimmed, reason: verdict.reason ?? 'duplicate' })
       return
     }
-    const id = addResource({ name: trimmed, type: type.trim() || undefined, color: PALETTE[resources.length % PALETTE.length] })
+    const id = addResource({
+      name: trimmed,
+      type: type.trim() || undefined,
+      color: PALETTE[resources.length % PALETTE.length],
+      ownerNodeId: newOwnerId || undefined
+    })
     if (!id) {
       rejectName({ scope: 'resource', id: '', name: trimmed, reason: 'duplicate' })
       return
     }
     setName('')
     setType('')
+    // Keep newOwnerId so consecutive additions stay in the same lane.
     // The catalogue stays collapsed after adding, so confirm the write here
     // instead of making the user open the list to check.
     toast({
@@ -433,14 +448,31 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
               <span className="text-muted-foreground">{showAddForm ? '−' : '+'}</span>
             </button>
             {showAddForm && (
-              <div className="px-3 pb-3 flex items-end gap-2 border-t pt-3">
-                <div className="flex-1">
+              <div className="px-3 pb-3 flex flex-wrap items-end gap-2 border-t pt-3">
+                <div className="flex-1 min-w-[160px]">
                   <label className="block text-xs text-muted-foreground mb-1">{t('resource.nameLabel', { defaultValue: '名称' })}</label>
                   <input className={inputClass} value={name} onChange={e => setName(e.target.value)} placeholder={t('resource.newName', { defaultValue: '新资源名称（如 管库抓手）' })} onKeyDown={e => { if (e.key === 'Enter') submit() }} />
                 </div>
-                <div className="w-28">
+                <div className="w-24">
                   <label className="block text-xs text-muted-foreground mb-1">{t('resource.type', { defaultValue: '类型' })}</label>
                   <input className={inputClass} value={type} onChange={e => setType(e.target.value)} placeholder="gripper" />
+                </div>
+                <div className="w-44">
+                  <label className="block text-xs text-muted-foreground mb-1">{t('resource.owner', { defaultValue: '归属模块/机构' })}</label>
+                  <select className={inputClass} value={newOwnerId} onChange={e => setNewOwnerId(e.target.value)}
+                    title={t('resource.ownerHint', { defaultValue: '归属只决定层级分组，不代表自动占用资源' })}>
+                    <option value="">{t('resource.ownerNone', { defaultValue: '（未归属）' })}</option>
+                    {moduleOptions.length > 0 && (
+                      <optgroup label={t('resource.groupModules', { defaultValue: '模块（直属）' })}>
+                        {moduleOptions.map(m => <option key={m.id} value={m.id}>{nodeName(m)}</option>)}
+                      </optgroup>
+                    )}
+                    {mechanismOptions.length > 0 && (
+                      <optgroup label={t('resource.groupMechanisms', { defaultValue: '机构' })}>
+                        {mechanismOptions.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                      </optgroup>
+                    )}
+                  </select>
                 </div>
                 <button onClick={submit} className="px-3 py-1 text-sm rounded bg-primary text-primary-foreground hover:opacity-90 flex items-center gap-1">
                   <Plus className="h-3.5 w-3.5" />{t('resource.add', { defaultValue: '添加' })}

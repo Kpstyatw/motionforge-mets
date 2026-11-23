@@ -519,6 +519,7 @@
     "sourceAuto": "自動占有（旧データ）",
     "sourceManual": "手動占有",
     "jumpFlowTip": "ダブルクリックでフロー表示に移動し該当動作を探す",
+    "claimName": "動作名",
     "allocTitle": "リソース占有",
     "allocSection": "リソース占有",
     "allocSectionHint": "正確なウィンドウ、重複は警告",

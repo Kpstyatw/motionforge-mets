@@ -6,7 +6,7 @@ import { buildResourceViewRows, ResourceViewRow } from '@/lib/resourceLanesView'
 import { ScheduleResult } from '@/lib/dependencyEngine'
 import { cycleIndexOf, templateIdOf } from '@/lib/cycleEngine'
 import { formatTime } from '@/lib/timeScale'
-import { measureTextWidth, fitTextToWidth, computeLabelWidth } from '@/lib/labelWidth'
+import { claimBarLabel, computeLabelWidth } from '@/lib/labelWidth'
 import { TimeConfig } from '@/types'
 import { Plus, AlertTriangle, Pencil } from 'lucide-react'
 
@@ -227,19 +227,18 @@ export const ResourceLanes: React.FC<ResourceLanesProps> = ({
                   const selected = selectedTaskId !== null && templateIdOf(selectedTaskId) === templateIdOf(a.task.id)
                   const cycle = cycleIndexOf(a.task.id)
                   const cycleTag = cycle > 1 ? `C${cycle}·` : ''
-                  const desc = a.task.module.actionDescription || a.task.code
-                  const wide = w > 118
-                  const medium = w > 46
-                  const label = wide
-                    ? cycleTag + fitTextToWidth(desc, Math.max(0, w - 12 - measureTextWidth(cycleTag, 10)), 10)
-                    : medium ? cycleTag + templateIdOf(a.task.code)
-                      : a.task.code
+                  // One label rule for every bar: always the action/sub-action
+                  // NAME, truncated to whatever fits. No code fallback by width —
+                  // the full name stays available in the hover tooltip below.
+                  const fullName = a.task.module.actionDescription || a.task.code
+                  const label = claimBarLabel(fullName, cycleTag, w)
                   const showLabel = w > 18
                   const source = a.allocation.source === 'mechanism'
                     ? t('resource.sourceAuto', { defaultValue: '自动占用（历史数据）' })
                     : t('resource.sourceManual', { defaultValue: '手动占用' })
                   const tip = [
                     `${lane.resource.name} ← ${a.task.code}`,
+                    `${t('resource.claimName', { defaultValue: '动作名称' })}：${fullName}`,
                     flowPath(a.task.id),
                     `${a.startMs} → ${a.endMs} ms (${a.endMs - a.startMs} ms)${cycle > 1 ? `\n周期 C${cycle}` : ''}`,
                     source,

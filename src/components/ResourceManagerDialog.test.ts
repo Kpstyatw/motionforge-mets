@@ -59,4 +59,23 @@ describe('ResourceManagerDialog catalogue visibility', () => {
     expect(html).not.toContain('清洗盘')
     expect(html).not.toContain('已有资源')
   })
+
+  it('exposes the owner picker in the new-resource form with module and mechanism options', () => {
+    useProjectStore.getState().loadProject({
+      name: 'owner-picker',
+      modules: [
+        { id: 'MO', moduleName: '采样模块', kind: 'module', parentId: null },
+        { id: 'ME', moduleName: '抓手机构', kind: 'mechanism', parentId: 'MO' }
+      ],
+      resources: [{ id: 'R1', name: '取血抓手', type: 'gripper' }],
+      allocations: []
+    } as never)
+    const html = render()
+    // The new-resource form must let users choose the owner directly, grouped
+    // the same way as the per-resource detail picker.
+    expect(html).toContain('归属模块/机构')
+    expect(html).toContain('模块（直属）')
+    expect(html).toContain('采样模块')
+    expect(html).toContain('采样模块 / 抓手机构')
+  })
 })

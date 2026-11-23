@@ -519,6 +519,7 @@
     "sourceAuto": "自动占用（历史数据）",
     "sourceManual": "手动占用",
     "jumpFlowTip": "双击跳转到流程视图并定位该动作",
+    "claimName": "动作名称",
     "allocTitle": "资源占用",
     "allocSection": "资源占用",
     "allocSectionHint": "精确窗口，重叠会提示",

@@ -519,6 +519,7 @@
     "sourceAuto": "Auto claim (legacy data)",
     "sourceManual": "Manual claim",
     "jumpFlowTip": "Double-click to jump to the flow view and locate the action",
+    "claimName": "Action",
     "allocTitle": "Resource allocation",
     "allocSection": "Resource allocation",
     "allocSectionHint": "Exact windows, overlaps are flagged",

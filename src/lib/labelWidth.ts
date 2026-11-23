@@ -31,6 +31,17 @@ export function fitTextToWidth(text: string, maxWidth: number, fontSize: number)
   return out + ell
 }
 
+/**
+ * Label drawn inside a resource claim bar. Always the ACTION NAME (never the
+ * numeric code); when the bar is too narrow the name is truncated with an
+ * ellipsis so it stays inside the bar. The full name is shown in the hover
+ * tooltip. `cycleTag` (e.g. "C2·") is kept in front when present.
+ */
+export function claimBarLabel(name: string, cycleTag: string, barWidthPx: number, fontSize = 10): string {
+  const available = Math.max(0, barWidthPx - 12 - measureTextWidth(cycleTag, fontSize))
+  return cycleTag + fitTextToWidth(name, available, fontSize)
+}
+
 export interface LabelSizing {
   /** Name text to size against. */
   name: string

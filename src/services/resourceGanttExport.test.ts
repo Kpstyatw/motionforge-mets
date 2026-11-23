@@ -7,6 +7,7 @@ import { buildGanttWorkbook } from './excelService'
 import { computeResourceSchedule } from '@/lib/resourceScheduler'
 import { buildResourceOwnerIndex } from '@/lib/resourceTree'
 import { renderResourceGanttSvg } from '@/lib/resourceGanttSvg'
+import { buildResourceViewRows } from '@/lib/resourceLanesView'
 import { buildPdfReport } from './pdfExport'
 
 const CONFIG = { ...DEFAULT_TIME_CONFIG, scaleMs: 1000, precisionMs: 100 }
@@ -51,19 +52,36 @@ function fixture(): { project: ProjectData; schedule: ReturnType<typeof computeS
 }
 
 describe('resource Gantt in exports', () => {
-  it('Excel adds a 资源甘特图 sheet with lanes, owner and occupancy cells', async () => {
+  it('keeps 模块 / 机构 / 资源 on separate hierarchy rows', () => {
+    const { project, schedule } = fixture()
+    const rs = computeResourceSchedule(schedule, project.allocations, project.resources)
+    const rows = buildResourceViewRows(rs.lanes, buildResourceOwnerIndex(project.modules))
+    expect(rows.map(r => [r.kind, r.name, r.depth])).toEqual([
+      ['module', '前处理', 0],
+      ['mechanism', '取血针', 1],
+      ['resource', '取血抓手', 2]
+    ])
+    // Only the resource row owns claims; group rows are headings.
+    expect(rows.map(r => (r.kind === 'resource' ? r.lane.allocations.length : 0))).toEqual([0, 0, 2])
+  })
+
+  it('Excel 资源甘特图 sheet uses the same hierarchy rows as the flow Gantt', async () => {
     const { project, schedule } = fixture()
     const blob = await buildGanttWorkbook({ project, schedule, rows: flattenTree(schedule) })
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(await blob.arrayBuffer())
     const sheet = wb.getWorksheet('资源甘特图')
     expect(sheet).toBeTruthy()
-    expect(sheet!.getCell(1, 1).value).toBe('资源')
-    expect(sheet!.getCell(1, 2).value).toBe('归属模块/机构')
-    // One resource lane on row 2 with its name and owner.
-    expect(sheet!.getCell(2, 1).value).toBe('取血抓手')
-    expect(String(sheet!.getCell(2, 2).value)).toContain('前处理')
-    expect(sheet!.getCell(2, 3).value).toBe(2) // two claims
+    expect(sheet!.getCell(1, 1).value).toBe('资源层级')
+    expect(sheet!.getCell(1, 2).value).toBe('类型 / 数量')
+    // Row 2 module, row 3 mechanism, row 4 resource — never one flattened path.
+    expect(sheet!.getCell(2, 1).value).toBe('前处理')
+    expect(sheet!.getCell(3, 1).value).toBe('取血针')
+    expect(sheet!.getCell(4, 1).value).toBe('取血抓手')
+    expect(sheet!.getCell(4, 2).value).toBe('gripper')
+    expect(sheet!.getCell(4, 3).value).toBe(2) // two claims on the resource row
+    expect(sheet!.getCell(2, 3).value).toBe('') // no claims on a heading row
+    expect(sheet!.rowCount).toBe(4)
   })
 
   it('Excel resource sheet marks conflicting overlap windows in red', async () => {
@@ -73,11 +91,11 @@ describe('resource Gantt in exports', () => {
     const wb = new ExcelJS.Workbook()
     await wb.xlsx.load(await blob.arrayBuffer())
     const sheet = wb.getWorksheet('资源甘特图')!
-    expect(sheet.getCell(2, 4).value).toBe(1) // one conflict on the lane
+    expect(sheet.getCell(4, 4).value).toBe(1) // one conflict on the resource row
     // At least one occupied cell carries the conflict marker.
     let marked = 0
     for (let c = 5; c <= sheet.columnCount; c++) {
-      if (sheet.getCell(2, c).value === '⚠') marked++
+      if (sheet.getCell(4, c).value === '⚠') marked++
     }
     expect(marked).toBeGreaterThan(0)
   })
@@ -95,8 +113,39 @@ describe('resource Gantt in exports', () => {
       height: 120
     })
     expect(svg).toContain('<svg')
-    expect(svg).toContain('取血抓手')
+    const labels = [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map(m => m[1])
+    expect(labels).toContain('前处理 · 1')
+    expect(labels).toContain('取血针 · 1')
+    expect(labels).toContain('取血抓手')
+    // No flattened "模块 / 机构 · 资源" label: each level owns its own row.
+    expect(labels.some(l => l.includes(' / '))).toBe(false)
     expect(svg).toContain('#ef4444') // conflict colour present
+  })
+
+  it('PDF resource SVG uses the supplied px/ms and does not stretch to page width', () => {
+    const { project, schedule } = fixture()
+    const rs = computeResourceSchedule(schedule, project.allocations, project.resources)
+    const pxPerMs = 0.12
+    const render = (width: number) => renderResourceGanttSvg({
+      schedule: rs,
+      owners: buildResourceOwnerIndex(project.modules),
+      config: normalizeTimeConfig(CONFIG),
+      totalMs: schedule.totalMs,
+      width,
+      height: 120,
+      pxPerMs
+    })
+    // `rx="2"` marks the claim bars (conflict bands have no rounded corners).
+    const claimXs = (svg: string) => [...svg.matchAll(/<rect x="([\d.]+)" y="[\d.]+" width="([\d.]+)"[^>]*rx="2"/g)]
+      .map(m => Number(m[1]))
+
+    // Claims are at 1000ms and 2500ms → 1500ms apart.
+    const wide = claimXs(render(1400))
+    expect(wide).toHaveLength(2)
+    expect(wide[1] - wide[0]).toBeCloseTo(1500 * pxPerMs, 1)
+    // Changing the page width may shift the label column, but never the px/ms.
+    const narrow = claimXs(render(900))
+    expect(narrow[1] - narrow[0]).toBeCloseTo(wide[1] - wide[0], 1)
   })
 
   it('buildPdfReport embeds a resource Gantt page when resources are supplied', () => {

@@ -6,11 +6,15 @@ import {
 import { ScheduleResult, TreeRow, parsePredecessors } from '@/lib/dependencyEngine'
 import { computeResourceSchedule, resolveEventTime } from '@/lib/resourceScheduler'
 import { buildResourceOwnerIndex } from '@/lib/resourceTree'
+import { buildResourceViewRows } from '@/lib/resourceLanesView'
 import {
   buildExcelRows, COLUMN_KEYS, COLUMN_LABELS, ColumnKey,
   KIND_LABELS, MATRIX_MAX_COLUMNS, matrixStep
 } from '@/lib/excelModel'
-import { DEFAULT_EXCEL_LAYOUT, DEFAULT_GANTT_CONFIG, DEFAULT_TIME_CONFIG, formatTime, normalizeTimeConfig } from '@/lib/timeScale'
+import {
+  DEFAULT_EXCEL_LAYOUT, DEFAULT_GANTT_CONFIG, DEFAULT_TIME_CONFIG,
+  excelTimeCellWidth, formatTime, normalizeTimeConfig
+} from '@/lib/timeScale'
 import {
   collapseCycleProjection, cycleIndexOf, normalizeCycleConfig, templateIdOf
 } from '@/lib/cycleEngine'
@@ -45,10 +49,15 @@ const SHEET_RESOURCE_MATRIX = '资源甘特图'
 export interface ExcelExportInput {
   project: ProjectData
   schedule: ScheduleResult
-  /** Visible rows, i.e. `flattenTree(schedule, collapsedIds)`. */
+  /** All tree rows. Hidden ones are kept in the workbook and only flagged hidden. */
   rows: TreeRow[]
   layout?: ExcelLayoutConfig
-  /** Include rows hidden by collapse. Default false: table matches the chart. */
+  /**
+   * Template ids the Gantt currently hides (collapsed descendants + explicit
+   * hide). Multi-cycle instance ids are mapped back through `templateIdOf`.
+   */
+  hiddenRowIds?: Set<string>
+  /** Show hidden rows instead of flagging them hidden. Default false. */
   includeHiddenRows?: boolean
   now?: Date
 }
@@ -103,6 +112,24 @@ function cellNumber(value: ExcelJS.CellValue, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback
 }
 
+/**
+ * Excel draws a merged cell's border from each underlying cell. Styling only
+ * the anchor leaves the right/bottom edges invisible, so outline every cell
+ * in the range before merging to get a complete black box.
+ */
+function outlineMergedHeader(ws: ExcelJS.Worksheet, row: number, start: number, end: number) {
+  const side: ExcelJS.BorderStyle = 'thin'
+  const color = { argb: 'FF111111' }
+  for (let c = start; c <= end; c++) {
+    ws.getCell(row, c).border = {
+      top: { style: side, color },
+      left: { style: side, color },
+      bottom: { style: side, color },
+      right: { style: side, color }
+    }
+  }
+}
+
 function styleHeader(ws: ExcelJS.Worksheet, row: number, columns: number, layout: ExcelLayoutConfig) {
   ws.getRow(row).height = layout.headerHeight
   for (let c = 1; c <= columns; c++) {
@@ -122,9 +149,19 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
     columnWidths: { ...DEFAULT_EXCEL_LAYOUT.columnWidths, ...(input.layout ?? project.excelLayout)?.columnWidths }
   }
   const config = normalizeTimeConfig(project.timeConfig)
+  // One matrix cell = one Gantt time division; its Excel width mirrors the
+  // UI's px/division (~7 px per Excel character). Both matrix sheets use it.
+  const cellChars = excelTimeCellWidth(project.ganttConfig, config)
   const rows = input.includeHiddenRows
     ? schedule.tasks.map(t => ({ task: t, depth: t.depth, hasChildren: t.childIds.length > 0, collapsed: false }))
     : input.rows
+  // Excel differs from the PDF on purpose: a row hidden in the Gantt stays in
+  // the workbook (so no data is lost and the user can unhide it), it is just
+  // flagged as hidden. `includeHiddenRows` turns that flag off.
+  const hiddenIds = input.includeHiddenRows ? new Set<string>() : new Set(input.hiddenRowIds ?? [])
+  const isHiddenRow = (row: TreeRow) =>
+    hiddenIds.has(row.task.id) || hiddenIds.has(templateIdOf(row.task.id))
+  const hiddenByTaskId = new Set(rows.filter(isHiddenRow).map(r => r.task.id))
   const tableRows = buildExcelRows(schedule, rows)
 
   const workbook = new ExcelJS.Workbook()
@@ -148,6 +185,7 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
       startMode: r.startMode === 'manual' ? '锁定' : '自动'
     })
     row.height = layout.rowHeight
+    row.hidden = hiddenByTaskId.has(r.id)
     const isSummary = r.kind === 'module' || r.kind === 'mechanism'
     row.font = {
       size: layout.fontSize,
@@ -186,7 +224,7 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
   const mergeEvery = Math.max(0, Math.round(layout.matrixLabelEvery ?? 0))
   const labelEvery = mergeEvery > 0
     ? mergeEvery
-    : Math.max(1, Math.ceil(labelChars / Math.max(1, layout.matrixCellWidth)) + 1)
+    : Math.max(1, Math.ceil(labelChars / Math.max(1, cellChars)) + 1)
 
   // Left columns carry the hierarchy: 类型 marks 模块 / 机构 / 动作 / 子动作,
   // and the name is indented by tree depth so containment is visible at a glance.
@@ -198,7 +236,7 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
   matrix.columns = headerValues.map((header, i) => ({
     header,
     key: i === 0 ? 'code' : i === 1 ? 'kind' : i === 2 ? 'action' : `t${i}`,
-    width: i === 0 ? (layout.columnWidths.code ?? 14) : i === 1 ? 12 : i === 2 ? 30 : layout.matrixCellWidth
+    width: i === 0 ? (layout.columnWidths.code ?? 14) : i === 1 ? 12 : i === 2 ? 30 : cellChars
   }))
   styleHeader(matrix, 1, headerValues.length, layout)
   matrix.getRow(1).height = layout.headerHeight
@@ -220,7 +258,10 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
       // Clear sparse labels that landed inside the block, then merge.
       for (let c = start + 1; c <= end; c++) matrix.getCell(1, c).value = null
       matrix.getCell(1, start).value = label
-      if (end > start) matrix.mergeCells(1, start, 1, end)
+      if (end > start) {
+        outlineMergedHeader(matrix, 1, start, end)
+        matrix.mergeCells(1, start, 1, end)
+      }
     }
   }
 
@@ -228,6 +269,7 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
     const isSummary = r.kind === 'module' || r.kind === 'mechanism'
     const row = matrix.addRow({ code: r.code, kind: KIND_LABELS[r.kind], action: r.action })
     row.height = layout.matrixRowHeight
+    row.hidden = hiddenByTaskId.has(r.id)
     row.font = { size: layout.fontSize, bold: isSummary }
     // Indent by hierarchy depth: 模块(0) → 机构(1) → 动作(2) → 子动作(3)…
     row.getCell(3).alignment = { vertical: 'middle', horizontal: 'left', indent: Math.max(0, r.level - 1) }
@@ -266,6 +308,7 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
     const row = meta.addRow({ section, key, value, extra, note })
     row.height = layout.rowHeight
     row.font = { size: layout.fontSize }
+    return row
   }
   const cycleCfg = normalizeCycleConfig(project.cycleConfig)
   const settings: Array<[string, string | number]> = [
@@ -297,12 +340,27 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
   addMeta('说明', '甘特矩阵列宽(ms)', stepMs, '', '第 2 页每列代表的时间跨度；精确毫秒见第 1 页')
   addMeta('说明', '表头时间合并(刻度数)', mergeEvery, '', '表头每 N 个刻度合并为一格并显示该段时间；0=不合并')
   addMeta('说明', '最小精度(ms)', config.precisionMs, '', '所有时刻均为该精度的整数倍')
+  addMeta('说明', '时间刻度(ms/格)', stepMs, '', '甘特矩阵每列恰好等于一个时间刻度')
+  addMeta(
+    '说明', '时间格宽(px/格)',
+    (project.ganttConfig?.pxPerMs ?? DEFAULT_GANTT_CONFIG.pxPerMs) * config.scaleMs,
+    '', `矩阵列宽 ${cellChars} 字符（约 7px/字符），与时间刻度设置同步`
+  )
 
   tableRows.forEach(r => {
-    addMeta('层级', r.code, r.parentCode, KIND_LABELS[r.kind], r.path)
+    addMeta('层级', r.code, r.parentCode, KIND_LABELS[r.kind], r.path).hidden = hiddenByTaskId.has(r.id)
   })
+  // Only record edges whose two ends exist in the exported row set. Hidden
+  // rows are present now (just flagged hidden), so their edges are kept too —
+  // dropping them would corrupt the project on re-import.
+  // Callers may pass template rows (single cycle) or projected instance rows
+  // (multi cycle), so accept either spelling of an id before filtering edges.
+  const exportedIds = new Set(rows.flatMap(r => [r.task.id, templateIdOf(r.task.id)]))
+  const isExported = (id: string) => exportedIds.has(id) || exportedIds.has(templateIdOf(id))
   schedule.tasks.forEach(task => {
+    if (!isExported(task.id)) return
     ;(task.module.predecessors ?? []).forEach(dep => {
+      if (!isExported(dep.fromId)) return
       addMeta('依赖', task.code, schedule.byId[dep.fromId]?.code ?? dep.fromId, `${dep.type} / ${dep.lagMs}`, dep.id)
     })
   })
@@ -398,20 +456,22 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
   })
 
   // ---- Sheet 6: resource Gantt matrix ----------------------------------
-  // Mirrors the on-screen resource swim-lanes as a time-bucket matrix: one row
-  // per resource, cells filled where the resource is claimed, conflicts in red.
-  // Derived from the SAME ResourceSchedule the UI uses, so occupancy and
-  // conflicts in the export cannot disagree with the app.
+  // Mirrors the on-screen resource swim-lanes as a time-bucket matrix with the
+  // same 模块 → 机构 → 资源 hierarchy rows as the flow Gantt and the PDF page.
+  // Cells are filled where a resource is claimed, conflicts in red; heading
+  // rows carry no claims. Derived from the SAME ResourceSchedule the UI uses,
+  // so occupancy and conflicts in the export cannot disagree with the app.
   const resourceSchedule = computeResourceSchedule(schedule, project.allocations ?? [], project.resources ?? [])
-  const ownerIndex = buildResourceOwnerIndex(project.modules ?? [], project.resources ?? [])
+  const resourceOwners = buildResourceOwnerIndex(project.modules ?? [], project.resources ?? [])
+  const resourceRows = buildResourceViewRows(resourceSchedule.lanes, resourceOwners)
   const resMatrix = workbook.addWorksheet(SHEET_RESOURCE_MATRIX, { views: [{ state: 'frozen', xSplit: 4, ySplit: 1 }] })
-  const resHeader: string[] = ['资源', '归属模块/机构', '占用次数', '冲突']
+  const resHeader: string[] = ['资源层级', '类型 / 数量', '占用次数', '冲突']
   for (let i = 0; i < bucketCount; i++) resHeader.push(i % labelEvery === 0 ? formatTime(i * stepMs, config) : '')
   const RES_LEFT = 4
   resMatrix.columns = resHeader.map((header, i) => ({
     header,
     key: i < RES_LEFT ? ['name', 'owner', 'uses', 'conflicts'][i] : `t${i}`,
-    width: i === 0 ? 28 : i === 1 ? 26 : i === 2 ? 10 : i === 3 ? 8 : layout.matrixCellWidth
+    width: i === 0 ? 28 : i === 1 ? 26 : i === 2 ? 10 : i === 3 ? 8 : cellChars
   }))
   styleHeader(resMatrix, 1, resHeader.length, layout)
   resMatrix.getRow(1).height = layout.headerHeight
@@ -426,35 +486,40 @@ export async function buildGanttWorkbook(input: ExcelExportInput): Promise<Blob>
       const label = firstTick === lastTick ? formatTime(from, config) : `${formatTime(from, config)}–${formatTime(to, config)}`
       for (let c = start + 1; c <= end; c++) resMatrix.getCell(1, c).value = null
       resMatrix.getCell(1, start).value = label
-      if (end > start) resMatrix.mergeCells(1, start, 1, end)
+      if (end > start) {
+        outlineMergedHeader(resMatrix, 1, start, end)
+        resMatrix.mergeCells(1, start, 1, end)
+      }
     }
   }
 
-  for (const lane of resourceSchedule.lanes) {
-    const owner = ownerIndex.get(lane.resource.id)
-    const ownerName = owner ? [owner.moduleName, owner.mechanismName].filter(Boolean).join(' / ') : ''
-    const conflictCount = lane.conflicts.length
-    const uses = lane.allocations.length
-    const row = resMatrix.addRow({
-      name: lane.resource.name,
-      owner: ownerName,
-      uses,
-      conflicts: conflictCount
+  for (const viewRow of resourceRows) {
+    // Module/mechanism rows are headings only; claims live on resource rows.
+    const lane = viewRow.kind === 'resource' ? viewRow.lane : undefined
+    const excelRow = resMatrix.addRow({
+      name: viewRow.name,
+      owner: lane ? (lane.resource.type || '') : `${viewRow.count} 项`,
+      uses: lane ? lane.allocations.length : '',
+      conflicts: lane ? lane.conflicts.length : ''
     })
-    row.height = layout.matrixRowHeight
-    row.font = { size: layout.fontSize }
-    row.getCell(1).alignment = {
-      vertical: 'middle', horizontal: 'left', indent: Math.max(0, lane.depth ?? 0)
+    excelRow.height = layout.matrixRowHeight
+    excelRow.font = { size: layout.fontSize, bold: !lane }
+    excelRow.getCell(1).alignment = {
+      vertical: 'middle', horizontal: 'left', indent: viewRow.depth
+    }
+    if (!lane) {
+      excelRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }
+      continue
     }
     if (lane.resource.color) {
-      row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lighten(lane.resource.color) } }
+      excelRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: lighten(lane.resource.color) } }
     }
     // Occupied windows. A bucket is conflict-filled if any conflict on this
     // resource overlaps it, so the red always matches the claim conflict.
     for (let i = 0; i < bucketCount; i++) {
       const bucketStart = i * stepMs
       const bucketEnd = bucketStart + stepMs
-      const cell = row.getCell(i + RES_LEFT + 1)
+      const cell = excelRow.getCell(i + RES_LEFT + 1)
       const claimed = lane.allocations.some(a => a.endMs > bucketStart && a.startMs < bucketEnd)
       const inConflict = lane.conflicts.some(c => c.overlapEndMs > bucketStart && c.overlapStartMs < bucketEnd)
       if (inConflict) {

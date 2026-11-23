@@ -7,6 +7,7 @@ import {
   ResourceAllocation, RotaryMotion, StartMode, TaskKind, TimeConfig
 } from '@/types'
 import { useHistoryStore } from './useHistoryStore'
+import { usePreferencesStore } from './usePreferencesStore'
 import {
   collectDescendantIds, computeSchedule, defaultNewNodeStartMs, normalizeModules,
   renumberHierarchyCodes, syncLegacyFields, wouldCreateCycle, wouldCreateHierarchyConflict
@@ -49,6 +50,9 @@ export const MODULE_COLORS = [
 
 function freshProject(): ProjectData {
   const now = new Date().toISOString()
+  // New projects inherit the last time-scale dialog values instead of
+  // resetting to defaults on every launch.
+  const remembered = usePreferencesStore.getState().timeScale
   return {
     name: 'Untitled Project',
     modules: [],
@@ -59,10 +63,10 @@ function freshProject(): ProjectData {
     updatedAt: now,
     version: '2.0.0',
     schemaVersion: 2,
-    timeConfig: { ...DEFAULT_TIME_CONFIG },
+    timeConfig: normalizeTimeConfig(remembered?.timeConfig ?? DEFAULT_TIME_CONFIG),
     cycleConfig: { ...DEFAULT_CYCLE_CONFIG },
     excelLayout: { ...DEFAULT_EXCEL_LAYOUT, columnWidths: { ...DEFAULT_EXCEL_LAYOUT.columnWidths } },
-    ganttConfig: { ...DEFAULT_GANTT_CONFIG }
+    ganttConfig: { ...DEFAULT_GANTT_CONFIG, ...(remembered?.ganttConfig ?? {}) }
   }
 }
 
@@ -155,7 +159,11 @@ function materializeSubActionTimes(modules: ModuleData[]): ModuleData[] {
 /** Bring an upstream (schema 1) project or CSV-derived data up to schema 2. */
 export function migrateProject(input: Partial<ProjectData> & { modules?: ModuleData[] }): ProjectData {
   const base = freshProject()
-  const timeConfig = normalizeTimeConfig(input.timeConfig)
+  // A project file wins for fields it explicitly stores. Older files written
+  // before timeConfig existed inherit the remembered dialog values, just like
+  // ganttConfig already does — otherwise opening one silently reset the scale
+  // to factory defaults even though the user had saved a different one.
+  const timeConfig = normalizeTimeConfig({ ...base.timeConfig, ...(input.timeConfig ?? {}) })
   // Recompute display codes from the tree, so legacy T01/T02 projects and
   // imported workbooks immediately gain hierarchy-aware numbering.
   const normalized = renumberHierarchyCodes(normalizeModules(input.modules ?? [], timeConfig))

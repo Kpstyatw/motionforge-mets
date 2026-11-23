@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
+import { usePreferencesStore } from '@/stores/usePreferencesStore'
 import {
   PRECISION_CHOICES, SCALE_CHOICES, normalizeTimeConfig
 } from '@/lib/timeScale'
@@ -46,15 +47,19 @@ export const TimeScaleDialog: React.FC<TimeScaleDialogProps> = ({ isOpen, onClos
   const apply = () => {
     const scale = Math.max(1, Math.round(Number(scaleMs) || 100))
     const precision = Math.max(1, Math.min(scale, Math.round(Number(precisionMs) || 1)))
-    setTimeConfig({ scaleMs: scale, precisionMs: precision, displayUnit })
-    setGanttConfig({
+    const timeConfig = { scaleMs: scale, precisionMs: precision, displayUnit }
+    const ganttConfig = {
       rowHeight: Math.max(18, Math.min(80, Math.round(Number(rowHeight) || 34))),
       // pixels per scale division → px/ms
       pxPerMs: Math.min(8, Math.max(0.004, (Number(cellWidth) || 35) / scale)),
       showDependencies,
       showSummaries,
       showModuleSummaryBars
-    })
+    }
+    setTimeConfig(timeConfig)
+    setGanttConfig(ganttConfig)
+    // Remember these values across restarts and for every new project.
+    usePreferencesStore.getState().updateTimeScalePreferences({ timeConfig, ganttConfig })
     onClose()
   }
 

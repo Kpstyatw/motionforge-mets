@@ -9,6 +9,8 @@ interface PreferencesStore extends Preferences {
   updateAnimationPreferences: (updates: Partial<Preferences['animation']>) => void
   updateUIPreferences: (updates: Partial<Preferences['ui']>) => void
   updateFilePreferences: (updates: Partial<Preferences['file']>) => void
+  /** Remember the time-scale dialog values for future sessions and projects. */
+  updateTimeScalePreferences: (updates: Partial<Preferences['timeScale']>) => void
   resetToDefaults: () => void
   loadPreferences: () => void
   savePreferences: () => void
@@ -19,8 +21,12 @@ const STORAGE_KEY = 'cycleview-preferences'
 // picked up once and then re-saved under STORAGE_KEY.
 const LEGACY_STORAGE_KEY = 'mets-preferences'
 
+const hasStorage = () => typeof localStorage !== 'undefined'
+
 const readStoredPreferences = (): string | null =>
-  localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
+  hasStorage()
+    ? localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
+    : null
 
 /** Merge older/localStorage preferences that predate the `file` section. */
 export function normalizePreferences(saved?: Partial<Preferences> | null): Preferences {
@@ -31,7 +37,11 @@ export function normalizePreferences(saved?: Partial<Preferences> | null): Prefe
     grid: { ...DEFAULT_PREFERENCES.grid, ...(saved?.grid ?? {}) },
     animation: { ...DEFAULT_PREFERENCES.animation, ...(saved?.animation ?? {}) },
     ui: { ...DEFAULT_PREFERENCES.ui, ...(saved?.ui ?? {}) },
-    file: { ...DEFAULT_PREFERENCES.file, ...(saved?.file ?? {}), defaultFormat }
+    file: { ...DEFAULT_PREFERENCES.file, ...(saved?.file ?? {}), defaultFormat },
+    timeScale: {
+      timeConfig: { ...DEFAULT_PREFERENCES.timeScale.timeConfig, ...(saved?.timeScale?.timeConfig ?? {}) },
+      ganttConfig: { ...DEFAULT_PREFERENCES.timeScale.ganttConfig, ...(saved?.timeScale?.ganttConfig ?? {}) }
+    }
   }
 }
 
@@ -92,6 +102,14 @@ export const usePreferencesStore = create<PreferencesStore>()(
       get().savePreferences()
     },
 
+    updateTimeScalePreferences: (updates) => {
+      set((state) => {
+        Object.assign(state.timeScale.timeConfig, updates.timeConfig ?? {})
+        Object.assign(state.timeScale.ganttConfig, updates.ganttConfig ?? {})
+      })
+      get().savePreferences()
+    },
+
     resetToDefaults: () => {
       set((state) => {
       // Deep copy to ensure all nested properties are reset
@@ -99,6 +117,10 @@ export const usePreferencesStore = create<PreferencesStore>()(
       state.animation = { ...DEFAULT_PREFERENCES.animation }
       state.ui = { ...DEFAULT_PREFERENCES.ui }
       state.file = { ...DEFAULT_PREFERENCES.file }
+      state.timeScale = {
+        timeConfig: { ...DEFAULT_PREFERENCES.timeScale.timeConfig },
+        ganttConfig: { ...DEFAULT_PREFERENCES.timeScale.ganttConfig }
+      }
       })
       get().savePreferences()
     },
@@ -118,8 +140,13 @@ export const usePreferencesStore = create<PreferencesStore>()(
     },
 
     savePreferences: () => {
+      if (!hasStorage()) return
       try {
-        const { updateGridPreferences, updateAnimationPreferences, updateUIPreferences, updateFilePreferences, resetToDefaults, loadPreferences, savePreferences, ...preferences } = get()
+        const {
+          updateGridPreferences, updateAnimationPreferences, updateUIPreferences,
+          updateFilePreferences, updateTimeScalePreferences, resetToDefaults,
+          loadPreferences, savePreferences, ...preferences
+        } = get()
         const preferencesToSave = JSON.stringify(preferences)
         localStorage.setItem(STORAGE_KEY, preferencesToSave)
       } catch (error) {

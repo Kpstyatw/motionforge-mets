@@ -1,10 +1,10 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useAnimationStore } from '@/stores/useAnimationStore'
 import {
-  collectPredecessorIds, collectSuccessorIds, flattenTree, TreeRow
+  collectPredecessorIds, collectSuccessorIds, predecessorDisplayId, visibleTreeRows, TreeRow
 } from '@/lib/dependencyEngine'
 import { useCycleView } from '@/hooks/useCycleView'
 import {
@@ -65,7 +65,22 @@ export const GanttView: React.FC<GanttViewProps> = ({
   const currentFrame = useAnimationStore(state => state.currentFrame)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [hovered, setHovered] = useState<string | null>(null)
+  // Row-level hover is keyed by template id so all cycle bars on one row
+  // light up together; `hovered` stays instance-level for the single bar.
+  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null)
+  const cursorLineRef = useRef<HTMLDivElement>(null)
+  const cursorLabelRef = useRef<HTMLDivElement>(null)
   const [groupBy, setGroupBy] = useState<GroupBy>('flow')
+  // SSR-safe: the auto label column must leave room for the time axis.
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === 'undefined' ? 1400 : window.innerWidth
+  )
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onResize = () => setViewportWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
   const [cycleDialogOpen, setCycleDialogOpen] = useState(false)
 
   const { config, expansion, schedule, templateSchedule, resourceSchedule, mechanismConflicts, resourceOwners, totalMs } = useCycleView()
@@ -86,15 +101,19 @@ export const GanttView: React.FC<GanttViewProps> = ({
   // single/multi-cycle switch. A hidden parent's subtree was expanded when it
   // was hidden, so filtering by id here drops every one of its descendants.
   const hiddenSet = useMemo(() => new Set(hiddenTaskIds), [hiddenTaskIds])
+  const collapsedSet = useMemo(() => new Set(collapsedTaskIds), [collapsedTaskIds])
   const rows = useMemo(
-    () => flattenTree(rowSchedule, new Set(collapsedTaskIds))
-      .filter(row => !hiddenSet.has(row.task.id)),
-    [rowSchedule, collapsedTaskIds, hiddenSet]
+    () => visibleTreeRows(rowSchedule, collapsedSet, hiddenSet),
+    [rowSchedule, collapsedSet, hiddenSet]
   )
   const hiddenCount = rowSchedule.tasks.length - rows.length
 
-  // Auto-size the sticky label column to the longest visible name so long
-  // task names show in full instead of being ellipsised at a fixed width.
+  // Auto-size to the longest visible name, but never let a single long name
+  // swallow the chart: the sticky column stays under ~35% of the viewport.
+  // Manual resizing (below) still allows the full LABEL_WIDTH_MAX.
+  const maxAutoLabelWidth = Math.max(
+    LABEL_WIDTH_MIN, Math.min(LABEL_WIDTH_MAX, Math.round(viewportWidth * 0.35))
+  )
   const autoLabelWidth = useMemo(() => computeLabelWidth(
     rows.map(row => ({
       name: row.task.module.actionDescription || '',
@@ -103,8 +122,8 @@ export const GanttView: React.FC<GanttViewProps> = ({
         (expanded && row.task.module.cycleIndex ? 30 : 0) + 36 +
         measureTextWidth(`${row.task.startMs}–${row.task.endMs}`, 10)
     })),
-    { min: LABEL_WIDTH_MIN, max: LABEL_WIDTH_MAX }
-  ), [rows, expanded])
+    { min: LABEL_WIDTH_MIN, max: maxAutoLabelWidth }
+  ), [rows, expanded, maxAutoLabelWidth])
   // Manual resize overrides the auto value; null means "follow content".
   const [manualLabelWidth, setManualLabelWidth] = useState<number | null>(null)
   const labelWidth = manualLabelWidth ?? autoLabelWidth
@@ -147,6 +166,40 @@ export const GanttView: React.FC<GanttViewProps> = ({
     setGanttConfig({ pxPerMs: Math.min(8, Math.max(0.004, available / (totalMs + config.scaleMs))) })
   }
 
+  // Crosshair writes straight to the DOM: a state update here would re-render
+  // every bar on every mousemove and make large projects feel sluggish.
+  const hideCursor = () => {
+    if (cursorLineRef.current) cursorLineRef.current.style.opacity = '0'
+    if (cursorLabelRef.current) cursorLabelRef.current.style.opacity = '0'
+  }
+  const onChartMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const line = cursorLineRef.current
+    const label = cursorLabelRef.current
+    if (!line || !label) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const px = e.clientX - rect.left
+    const rawMs = pxPerMs > 0 ? px / pxPerMs : 0
+    if (!Number.isFinite(rawMs) || rawMs < 0 || rawMs > totalMs) {
+      hideCursor()
+      return
+    }
+    const ms = Math.round(rawMs / config.precisionMs) * config.precisionMs
+    const x = ms * pxPerMs
+    let text = formatTime(ms, config)
+    if (expanded) {
+      const cycleIndex = expansion.boundaries.findIndex(
+        (b, i) => i + 1 < expansion.boundaries.length && ms >= b && ms < expansion.boundaries[i + 1]
+      )
+      if (cycleIndex >= 0) text = `C${cycleIndex + 1} · ${text}`
+    }
+    line.style.opacity = '1'
+    label.style.opacity = '1'
+    line.style.left = `${x}px`
+    label.textContent = text
+    const labelW = measureTextWidth(text, 10) + 16
+    label.style.left = `${x + labelW + 10 > chartWidth ? Math.max(0, x - labelW - 6) : x + 6}px`
+  }
+
   // Hide the selected row together with its whole subtree. Ids come from the
   // template schedule so a row hidden in one cycle mode stays hidden in the
   // other, and a hidden parent takes all of its descendants with it.
@@ -180,7 +233,9 @@ export const GanttView: React.FC<GanttViewProps> = ({
       if (toRow === undefined) return
       ;(task.module.predecessors ?? []).forEach(dep => {
         const pred = schedule.byId[dep.fromId]
-        const fromId = templateIdOf(dep.fromId)
+        // The editor stored this edge on the container's latest leaf; draw it
+        // on the container row the user actually selected.
+        const fromId = templateIdOf(predecessorDisplayId(schedule, dep.fromId))
         const fromRow = rowIndex.get(fromId)
         if (!pred || fromRow === undefined || !visibleIds.has(fromId)) return
         const startFromEnd = dep.type === 'FS' || dep.type === 'FF'
@@ -199,6 +254,30 @@ export const GanttView: React.FC<GanttViewProps> = ({
     })
     return paths
   }, [rowIndex, schedule, pxPerMs, showDependencies, rowHeight, visibleIds])
+
+  // Conflict windows as translucent bands on the rows they affect — the same
+  // red/amber language the resource view uses, now visible in the flow chart.
+  const conflictBands = useMemo(() => {
+    const bands: Array<{ key: string; row: number; start: number; end: number; kind: 'resource' | 'mechanism' }> = []
+    const seen = new Set<string>()
+    const add = (id: string, taskId: string, start: number, end: number, kind: 'resource' | 'mechanism') => {
+      const row = rowIndex.get(templateIdOf(taskId))
+      if (row === undefined || end <= start) return
+      const key = `${id}|${row}|${Math.round(start)}|${Math.round(end)}|${kind}`
+      if (seen.has(key)) return
+      seen.add(key)
+      bands.push({ key, row, start, end, kind })
+    }
+    resourceSchedule.conflicts.forEach(c => {
+      add(c.id, c.a.task.id, c.overlapStartMs, c.overlapEndMs, 'resource')
+      add(c.id, c.b.task.id, c.overlapStartMs, c.overlapEndMs, 'resource')
+    })
+    mechanismConflicts.conflicts.forEach(c => {
+      add(c.id, c.a.id, c.overlapStartMs, c.overlapEndMs, 'mechanism')
+      add(c.id, c.b.id, c.overlapStartMs, c.overlapEndMs, 'mechanism')
+    })
+    return bands
+  }, [resourceSchedule.conflicts, mechanismConflicts.conflicts, rowIndex])
 
   return (
     <div className="h-full flex flex-col min-h-0 bg-background">
@@ -369,8 +448,10 @@ export const GanttView: React.FC<GanttViewProps> = ({
                 index={i}
                 height={rowHeight}
                 selected={selectedTaskId === row.task.id}
+                highlighted={hoveredRowId === row.task.id}
                 dimmed={Boolean(chain && !chain.has(row.task.id))}
                 label={label(row.task.kind)}
+                onHover={setHoveredRowId}
                 onSelect={id => setSelectedTask(id)}
                 onEdit={id => onEditTask(templateIdOf(id))}
                 showCycle={expanded}
@@ -408,13 +489,48 @@ export const GanttView: React.FC<GanttViewProps> = ({
               width={chartWidth}
               height={bodyHeight}
               className="block"
-              onMouseLeave={() => setHovered(null)}
+              onMouseMove={onChartMouseMove}
+              onMouseLeave={() => {
+                setHovered(null)
+                setHoveredRowId(null)
+                hideCursor()
+              }}
             >
               <defs>
                 <marker id="gantt-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
                   <path d="M0,0 L7,3.5 L0,7 z" fill="#f97316" />
                 </marker>
               </defs>
+
+              {/* Row shading mirrors the sticky label column so a name can be
+                  followed across the chart; hover/selection light the whole
+                  row rather than just its bar. */}
+              {rows.map((row, i) => {
+                const selectedRow = selectedTaskId === row.task.id ||
+                  templateIdOf(selectedTaskId ?? '') === row.task.id
+                const hoveredRow = hoveredRowId === row.task.id
+                if (!selectedRow && !hoveredRow && i % 2 === 0) return null
+                const fill = selectedRow ? 'hsl(var(--primary) / 0.15)'
+                  : hoveredRow ? 'hsl(var(--accent) / 0.5)'
+                  : 'hsl(var(--muted) / 0.2)'
+                return (
+                  <rect key={`rowbg-${row.task.id}`}
+                    data-row-shade={selectedRow ? 'selected' : hoveredRow ? 'hover' : 'stripe'}
+                    x={0} y={i * rowHeight} width={chartWidth} height={rowHeight}
+                    style={{ fill }} pointerEvents="none" />
+                )
+              })}
+
+              {/* Conflict windows on the rows that actually collide. */}
+              {conflictBands.map(b => (
+                <rect key={`band-${b.key}`} data-conflict-band={b.kind}
+                  x={b.start * pxPerMs} y={b.row * rowHeight}
+                  width={Math.max(1, (b.end - b.start) * pxPerMs)} height={rowHeight}
+                  fill={b.kind === 'mechanism' ? '#f59e0b' : '#ef4444'} fillOpacity={0.13}
+                  stroke={b.kind === 'mechanism' ? '#f59e0b' : '#ef4444'}
+                  strokeOpacity={0.45} strokeWidth={1} strokeDasharray="3 2"
+                  pointerEvents="none" />
+              ))}
 
               {/* time grid */}
               {ticks.map(ms => (
@@ -484,7 +600,7 @@ export const GanttView: React.FC<GanttViewProps> = ({
                   const badgeCenters = rawCenters.map(c => c + badgeShift) // index 0 = red, last = amber
                   return (
                   <g key={task.id} data-task-id={task.id} opacity={dimmed ? (expanded && cycle > 1 ? 0.5 : 0.28) : 1}
-                    onMouseEnter={() => setHovered(task.id)}
+                    onMouseEnter={() => { setHovered(task.id); setHoveredRowId(rowTask.id) }}
                     onClick={() => setSelectedTask(rowTask.id)}
                     onDoubleClick={() => onEditTask(rowTask.id)}
                     style={{ cursor: 'pointer' }}>
@@ -552,6 +668,14 @@ export const GanttView: React.FC<GanttViewProps> = ({
                   stroke="#ef4444" strokeWidth={1.5} strokeDasharray="4 3" />
               )}
             </svg>
+            {/* Crosshair overlay spans the sticky ruler and the chart body;
+                its position is updated imperatively to avoid re-rendering bars. */}
+            <div className="pointer-events-none absolute inset-0 z-20" aria-hidden="true">
+              <div ref={cursorLineRef} data-cursor-line
+                className="absolute top-0 bottom-0 w-px bg-primary opacity-0" />
+              <div ref={cursorLabelRef} data-cursor-label
+                className="absolute top-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono whitespace-nowrap bg-foreground text-background shadow opacity-0" />
+            </div>
           </div>
         </div>
       </div>
@@ -566,22 +690,27 @@ interface GanttLabelRowProps {
   index: number
   height: number
   selected: boolean
+  highlighted: boolean
   dimmed: boolean
   label: string
   showCycle: boolean
+  onHover: (id: string | null) => void
   onSelect: (id: string) => void
   onEdit: (id: string) => void
   onToggle: () => void
 }
 
 const GanttLabelRow: React.FC<GanttLabelRowProps> = ({
-  row, index, height, selected, dimmed, label, showCycle, onSelect, onEdit, onToggle
+  row, index, height, selected, highlighted, dimmed, label, showCycle,
+  onHover, onSelect, onEdit, onToggle
 }) => {
   const { task, depth, hasChildren, collapsed } = row
   return (
     <div
-      className={`flex items-center gap-1 px-2 border-b text-xs cursor-pointer select-none ${selected ? 'bg-primary/15' : index % 2 ? 'bg-muted/20' : ''} hover:bg-accent/50`}
+      className={`flex items-center gap-1 px-2 border-b text-xs cursor-pointer select-none ${selected ? 'bg-primary/15' : highlighted ? 'bg-accent/50' : index % 2 ? 'bg-muted/20' : ''} hover:bg-accent/50`}
       style={{ height, opacity: dimmed ? 0.5 : 1, paddingLeft: 6 + depth * 14 }}
+      onMouseEnter={() => onHover(task.id)}
+      onMouseLeave={() => onHover(null)}
       onClick={() => onSelect(task.id)}
       onDoubleClick={() => onEdit(task.id)}
       title={`${task.code} · ${task.startMs} → ${task.endMs} ms`}

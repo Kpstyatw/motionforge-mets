@@ -1,7 +1,7 @@
 import { ModuleData, TimeConfig } from '@/types'
 import { computeActionStartTimes, startMsOf, durationMsOf } from './timingModel'
 import { CanvasSurface, DrawSurface, SvgSurface } from './drawSurface'
-import { formatTime, normalizeTimeConfig } from './timeScale'
+import { formatTime, normalizeTimeConfig, rulerTicks } from './timeScale'
 
 /**
  * Timing chart renderer — every pixel of the chart is drawn here.
@@ -156,17 +156,20 @@ export function drawRuler(
     fontFamily: RULER_FONT_FAMILY,
     align: 'center' as const
   }
+  // Use the very same tick selection as the on-screen Gantt (rulerTicks):
+  // a whole number of scale divisions, thinned to a 74px minimum spacing.
+  // A separate ceil(46/cellWidth) rule here made the PDF/MP4 ruler mark
+  // different instants from the chart the user saw on screen.
   const time = timeConfigOf(config)
-  const step = time.scaleMs
-  // Thin labels so they don't collide when zoomed out.
-  const divisions = Math.max(1, Math.ceil(46 / Math.max(1, config.cellWidth)))
-  for (let i = 0; i * config.cellWidth <= width; i += divisions) {
-    surface.text(
-      formatTime(i * step, time),
-      i * config.cellWidth + config.cellWidth / 2,
-      headerHeight / 2,
-      rulerText
-    )
+  const px = pxPerMsOf(config)
+  const plotWidth = Math.max(0, width - RULER_WIDTH)
+  for (const tickMs of rulerTicks(plotWidth / Math.max(px, 0.000001), time.scaleMs, px, 74)) {
+    const x = tickMs * px
+    if (x > plotWidth + 0.5) break
+    surface.text(formatTime(tickMs, time), x + 2, headerHeight / 2, {
+      ...rulerText,
+      align: 'left'
+    })
   }
 
   const rowStep = Math.max(1, Math.ceil(RULER_FONT_SIZE / config.cellHeight))

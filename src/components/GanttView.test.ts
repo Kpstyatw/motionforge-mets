@@ -133,3 +133,56 @@ describe('Gantt conflict markers', () => {
     for (const m of mTexts) expect(Number(m[1])).toBeGreaterThanOrEqual(0)
   })
 })
+
+describe('Gantt readability', () => {
+  it('shades alternate chart rows and mounts the crosshair overlay', () => {
+    load({ enabled: false, cycleMs: 1000, repeats: 1 })
+    const html = renderToStaticMarkup(React.createElement(GanttView, props))
+    // Three template rows → exactly the odd row gets the label column's zebra.
+    expect([...html.matchAll(/data-row-shade="stripe"/g)]).toHaveLength(1)
+    expect(html).toContain('data-cursor-line')
+    expect(html).toContain('data-cursor-label')
+  })
+
+  it('caps the auto label column so a long name cannot swallow the chart', () => {
+    const long = mk('LONG', 'action', 'M1', 0, 100)
+    long.actionDescription = '很长很长的动作名称'.repeat(30)
+    useProjectStore.getState().loadProject({
+      name: 'long-label',
+      modules: [mk('M1', 'module', null, 0, 0), long],
+      timeConfig: { scaleMs: 100, precisionMs: 1, displayUnit: 'ms' },
+      cycleConfig: { enabled: false, cycleMs: 1000, repeats: 1 }
+    } as never)
+    useUIStore.getState().setCollapsedTasks([])
+    const html = renderToStaticMarkup(React.createElement(GanttView, props))
+    const match = html.match(/style="width:(\d+)px;position:sticky;left:0"/)
+    expect(match).toBeTruthy()
+    // Node SSR viewport fallback is 1400 px → 35% = 490 px, floor 320 px.
+    expect(Number(match![1])).toBeLessThanOrEqual(490)
+    expect(Number(match![1])).toBeGreaterThanOrEqual(320)
+    // The full name stays available on hover.
+    expect(html).toContain('title="很长很长的动作名称')
+  })
+
+  it('paints the conflict overlap window on the rows that collide', () => {
+    useProjectStore.getState().loadProject({
+      name: 'conflict-band',
+      modules: [
+        mk('M1', 'module', null, 0, 0),
+        mk('K1', 'mechanism', 'M1', 0, 0),
+        mk('A1', 'action', 'K1', 0, 1000),
+        mk('A2', 'action', 'K1', 0, 1000)
+      ],
+      timeConfig: { scaleMs: 1000, precisionMs: 100, displayUnit: 'ms' },
+      cycleConfig: { enabled: false, cycleMs: 30000, repeats: 1 }
+    } as never)
+    useUIStore.getState().setCollapsedTasks([])
+    const html = renderToStaticMarkup(React.createElement(GanttView, props))
+    const bands = [...html.matchAll(/data-conflict-band="([^"]+)"[^>]*?x="([\d.]+)"[^>]*?width="([\d.]+)"/g)]
+    // Two leaves share one 1000 ms overlap; both rows get the amber band.
+    expect(bands).toHaveLength(2)
+    expect(bands.every(m => m[1] === 'mechanism')).toBe(true)
+    expect(Number(bands[0][2])).toBe(0)
+    expect(Number(bands[0][3])).toBeCloseTo(350, 0) // 1000 ms × 0.35 px/ms
+  })
+})

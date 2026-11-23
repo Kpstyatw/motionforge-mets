@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { useProjectStore } from './useProjectStore'
+import { useProjectStore, migrateProject } from './useProjectStore'
+import { usePreferencesStore } from './usePreferencesStore'
 import { computeSchedule } from '@/lib/dependencyEngine'
 import { normalizeTimeConfig } from '@/lib/timeScale'
 import { ModuleData, TaskKind } from '@/types'
@@ -566,5 +567,41 @@ describe('hierarchy-crossing predecessor guards', () => {
       { ...mk('S', 1200, 300), kind: 'subaction' as TaskKind, parentId: 'A' }
     ])
     expect(schedule().byId.A.predecessorIds).toHaveLength(0)
+  })
+})
+
+describe('remembered time scale', () => {
+  it('applies saved time-scale preferences to new projects', () => {
+    usePreferencesStore.getState().updateTimeScalePreferences({
+      timeConfig: { scaleMs: 25, precisionMs: 5, displayUnit: 's' },
+      ganttConfig: {
+        pxPerMs: 1.2, rowHeight: 44, showDependencies: false,
+        showSummaries: true, showModuleSummaryBars: true
+      }
+    })
+    useProjectStore.getState().createNewProject()
+    const project = useProjectStore.getState().project!
+    expect(project.timeConfig).toMatchObject({ scaleMs: 25, precisionMs: 5, displayUnit: 's' })
+    expect(project.ganttConfig).toMatchObject({
+      pxPerMs: 1.2, rowHeight: 44, showDependencies: false
+    })
+  })
+
+  it('legacy project without timeConfig inherits the remembered scale', () => {
+    usePreferencesStore.getState().updateTimeScalePreferences({
+      timeConfig: { scaleMs: 25, precisionMs: 5, displayUnit: 's' },
+      ganttConfig: {
+        pxPerMs: 1.2, rowHeight: 44, showDependencies: false,
+        showSummaries: true, showModuleSummaryBars: true
+      }
+    })
+    const legacy = migrateProject({ name: '旧项目', modules: [] })
+    expect(legacy.timeConfig).toMatchObject({ scaleMs: 25, precisionMs: 5, displayUnit: 's' })
+    // A file that explicitly stores a scale still wins over the preference.
+    const explicit = migrateProject({
+      name: '带刻度项目', modules: [],
+      timeConfig: { scaleMs: 200, precisionMs: 10, displayUnit: 'ms' }
+    })
+    expect(explicit.timeConfig).toMatchObject({ scaleMs: 200, precisionMs: 10, displayUnit: 'ms' })
   })
 })

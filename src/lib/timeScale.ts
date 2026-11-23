@@ -44,11 +44,26 @@ export const DEFAULT_EXCEL_LAYOUT: ExcelLayoutConfig = {
     predecessors: 34,
     color: 12
   },
-  matrixCellWidth: 3.5,
+  // 0 = follow the time-scale dialog's px/division (converted to Excel chars).
+  matrixCellWidth: 0,
   matrixRowHeight: 18,
   matrixStepMs: 0,
   matrixLabelEvery: 0,
   fontSize: 10
+}
+
+/**
+ * Excel column width for one Gantt time division. Excel measures width in
+ * '0' characters (~7 px at the default font), so a UI cell of N px maps to
+ * N/7 characters. Kept in one place so the matrix and resource sheets agree.
+ */
+export function excelTimeCellWidth(
+  gantt: Partial<GanttConfig> | undefined,
+  time: Partial<TimeConfig> | undefined
+): number {
+  const scaleMs = normalizeTimeConfig(time).scaleMs
+  const px = (gantt?.pxPerMs ?? DEFAULT_GANTT_CONFIG.pxPerMs) * scaleMs
+  return Math.max(2, Math.min(20, Math.round((px / 7) * 10) / 10))
 }
 
 export const DEFAULT_GANTT_CONFIG: GanttConfig = {
@@ -107,10 +122,12 @@ export function formatTime(ms: number, config: TimeConfig): string {
     const seconds = Math.floor((value % 60_000) / 1000)
     return `${minutes}:${String(seconds).padStart(2, '0')}`
   }
-  if (config.displayUnit === 's' || value >= 10_000) {
+  if (config.displayUnit === 's') {
     const decimals = Math.min(3, precisionDecimals(config.precisionMs))
     return `${(value / 1000).toFixed(decimals)}s`
   }
+  // Honour the configured unit exactly. An implicit switch to seconds above
+  // 10s made Excel/PDF labels disagree with a dialog that explicitly said ms.
   return `${value}ms`
 }
 

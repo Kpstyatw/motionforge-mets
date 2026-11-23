@@ -4,7 +4,7 @@ import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { usePreferencesStore } from '@/stores/usePreferencesStore'
 import { useCycleView } from '@/hooks/useCycleView'
-import { flattenTree } from '@/lib/dependencyEngine'
+import { flattenTree, visibleTreeRows } from '@/lib/dependencyEngine'
 import { findNameIssues, translateNameIssue } from '@/lib/nameValidation'
 import { saveProjectFile } from '@/services/saveProject'
 import { toast } from '@/components/ui/use-toast'
@@ -16,9 +16,9 @@ import { toast } from '@/components/ui/use-toast'
 export function useSaveProject() {
   const { t } = useTranslation()
   const { project, sourceFile, setSourceFile, setUnsavedChanges } = useProjectStore()
-  const { collapsedTaskIds } = useUIStore()
+  const { collapsedTaskIds, hiddenTaskIds } = useUIStore()
   const defaultFormat = usePreferencesStore(s => s.file.defaultFormat)
-  const { schedule, expansion } = useCycleView()
+  const { schedule, templateSchedule, expansion } = useCycleView()
   const [isSaving, setIsSaving] = useState(false)
 
   /** Returns true only when the project was actually written to disk. */
@@ -44,7 +44,16 @@ export function useSaveProject() {
     }
     setIsSaving(true)
     try {
-      const rows = flattenTree(schedule, new Set(collapsedTaskIds))
+      // A saved workbook must not lose collapsed/hidden rows: keep every row
+      // and let the writer flag the hidden ones the same way the export does.
+      const visibleIds = new Set(
+        visibleTreeRows(templateSchedule, new Set(collapsedTaskIds), new Set(hiddenTaskIds))
+          .map(r => r.task.id)
+      )
+      const hiddenRowIds = new Set(
+        templateSchedule.tasks.map(t => t.id).filter(id => !visibleIds.has(id))
+      )
+      const rows = flattenTree(schedule)
       // An existing file keeps its own format on Ctrl+S; new projects and
       // Save As follow the preference. This prevents silently changing a
       // shared .xlsx into .json just because the default was changed.
@@ -53,6 +62,7 @@ export function useSaveProject() {
         project,
         schedule,
         rows,
+        hiddenRowIds,
         allocations: expansion.allocations,
         cycleConfig: expansion.config,
         sourceFile,

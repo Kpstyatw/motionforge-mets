@@ -3,9 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { useProjectStore } from '@/stores/useProjectStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { useCycleView } from '@/hooks/useCycleView'
-import { flattenTree } from '@/lib/dependencyEngine'
-import { DEFAULT_EXCEL_LAYOUT } from '@/lib/timeScale'
-import { buildExcelRows, excelFileName, matrixStep } from '@/lib/excelModel'
+import { flattenTree, visibleTreeRows } from '@/lib/dependencyEngine'
+import {
+  DEFAULT_EXCEL_LAYOUT, DEFAULT_GANTT_CONFIG, excelTimeCellWidth
+} from '@/lib/timeScale'
+import { buildExcelRows, excelFileName } from '@/lib/excelModel'
 // ExcelJS is heavy: load the workbook reader/writer only when the user acts,
 // so the first paint (and the online bundle) stays small.
 import { downloadBlob } from '@/services/exportService'
@@ -30,7 +32,7 @@ const COLUMN_LABELS: Array<[keyof ExcelLayoutConfig['columnWidths'] | string, st
 export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => {
   const { t } = useTranslation()
   const { project, setExcelLayout, loadProject, setSourceFile } = useProjectStore()
-  const { collapsedTaskIds } = useUIStore()
+  const { collapsedTaskIds, hiddenTaskIds } = useUIStore()
   const fileRef = useRef<HTMLInputElement>(null)
   const [layout, setLayout] = useState<ExcelLayoutConfig | null>(null)
   const [includeHidden, setIncludeHidden] = useState(false)
@@ -49,11 +51,23 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
     }
   }, [isOpen, project?.excelLayout])
 
-  const { config, expansion, schedule } = useCycleView()
-  const rows = useMemo(
-    () => flattenTree(schedule, new Set(collapsedTaskIds)),
-    [schedule, collapsedTaskIds]
+  const { config, expansion, schedule, templateSchedule } = useCycleView()
+  const collapsedSet = useMemo(() => new Set(collapsedTaskIds), [collapsedTaskIds])
+  const hiddenSet = useMemo(() => new Set(hiddenTaskIds), [hiddenTaskIds])
+  // The chart hides rows by template id. Multi-cycle workbooks still list one
+  // row per cycle instance, so map ids back to the template before deciding
+  // which rows to export; otherwise collapsed/hidden rows reappear as @Cn.
+  const visibleTemplateIds = useMemo(
+    () => new Set(visibleTreeRows(templateSchedule, collapsedSet, hiddenSet).map(r => r.task.id)),
+    [templateSchedule, collapsedSet, hiddenSet]
   )
+  // Excel keeps every row and only marks the hidden ones as hidden (unlike the
+  // PDF, which omits them). Users can unhide in Excel without losing data.
+  const hiddenTemplateIds = useMemo(
+    () => new Set(templateSchedule.tasks.map(t => t.id).filter(id => !visibleTemplateIds.has(id))),
+    [templateSchedule, visibleTemplateIds]
+  )
+  const rows = useMemo(() => flattenTree(schedule), [schedule])
 
   if (!isOpen || !layout) return null
 
@@ -105,6 +119,7 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
         schedule,
         rows,
         layout,
+        hiddenRowIds: hiddenTemplateIds,
         includeHiddenRows: includeHidden
       })
       downloadBlob(blob, excelFileName(project.name))
@@ -166,7 +181,11 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
     }
   }
 
-  const step = matrixStep(schedule.totalMs, config, layout)
+  // Matrix geometry mirrors the Gantt ruler cell-for-cell; it is derived from
+  // the time-scale dialog, not from this dialog's legacy layout fields.
+  const step = config.scaleMs
+  const cellPx = (project?.ganttConfig?.pxPerMs ?? DEFAULT_GANTT_CONFIG.pxPerMs) * config.scaleMs
+  const cellChars = excelTimeCellWidth(project?.ganttConfig, config)
   const inputClass = 'w-full px-2 py-1 text-sm border rounded bg-background'
   const labelClass = 'block text-xs text-muted-foreground mb-1'
 
@@ -200,14 +219,18 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
                 <input className={inputClass} type="number" min={6} max={24} value={layout.fontSize}
                   onChange={e => setNumber('fontSize', e.target.value)} /></div>
               <div><label className={labelClass}>{t('excel.matrixCellWidth', { defaultValue: '矩阵列宽 (字符)' })}</label>
-                <input className={inputClass} type="number" min={1} max={20} step={0.5} value={layout.matrixCellWidth}
-                  onChange={e => setNumber('matrixCellWidth', e.target.value)} /></div>
+                <div className={`${inputClass} bg-muted/40 tabular-nums`}>{cellChars.toFixed(1)}</div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  {t('excel.matrixCellWidthHint', { defaultValue: `跟随时间格宽 ${Math.round(cellPx)}px/格（约 7px/字符）` })}
+                </p></div>
               <div><label className={labelClass}>{t('excel.matrixRowHeight', { defaultValue: '矩阵行高 (pt)' })}</label>
                 <input className={inputClass} type="number" min={8} max={80} value={layout.matrixRowHeight}
                   onChange={e => setNumber('matrixRowHeight', e.target.value)} /></div>
-              <div><label className={labelClass}>{t('excel.matrixStep', { defaultValue: '矩阵列跨度 (ms, 0=自动)' })}</label>
-                <input className={inputClass} type="number" min={0} value={layout.matrixStepMs}
-                  onChange={e => setNumber('matrixStepMs', e.target.value)} /></div>
+              <div><label className={labelClass}>{t('excel.matrixStep', { defaultValue: '矩阵列跨度 (ms/格)' })}</label>
+                <div className={`${inputClass} bg-muted/40 tabular-nums`}>{step} ms</div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  {t('excel.matrixStepHint', { defaultValue: '每列 = 时间刻度中的一个格，由时间刻度设置决定' })}
+                </p></div>
               <div><label className={labelClass}>{t('excel.matrixLabelEvery', { defaultValue: '表头时间合并 (刻度数)' })}</label>
                 <input className={inputClass} type="number" min={0} max={60} value={layout.matrixLabelEvery ?? 0}
                   onChange={e => setNumber('matrixLabelEvery', e.target.value)} /></div>
@@ -233,7 +256,7 @@ export const ExcelDialog: React.FC<ExcelDialogProps> = ({ isOpen, onClose }) => 
 
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={includeHidden} onChange={e => setIncludeHidden(e.target.checked)} />
-            {t('excel.includeHidden', { defaultValue: '导出被隐藏（已折叠）的子动作行' })}
+            {t('excel.includeHidden', { defaultValue: '显示被折叠或隐藏的行（取消隐藏）' })}
           </label>
 
           {report && (

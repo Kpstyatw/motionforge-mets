@@ -122,6 +122,19 @@ describe('Gantt ⇄ Excel', () => {
     expect(spanLabels.length).toBeGreaterThan(0)
     expect(spanLabels[0]).toMatch(/^.*–.*ms$/)
 
+    // Merged time headers are outlined in black on all four sides, so the
+    // grouped spans are readable against the blue header fill.
+    const firstSpanCol = merges
+      .map(m => m.split(':')[0])
+      .map(ref => ref.match(/^[A-Z]+/)?.[0] ?? '')
+      .map(letters => letters.split('').reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0))[0]
+    const border = header.getCell(firstSpanCol).border
+    expect(border.top?.style).toBe('thin')
+    expect(border.bottom?.style).toBe('thin')
+    expect(border.left?.style).toBe('thin')
+    expect(border.right?.style).toBe('thin')
+    expect(String(border.top?.color?.argb)).toBe('FF111111')
+
     // No data-row merges: action bars stay one cell per tick.
     expect(merges.every(m => /1$/.test(m.split(':')[0]))).toBe(true)
 
@@ -317,11 +330,31 @@ describe('Gantt ⇄ Excel', () => {
     expect(result.modules!.find(m => m.id === 'K')!.resourceId).toBe('PLATE')
   })
 
-  it('caps the time-bucket matrix to a printable number of columns', () => {
+  it('one matrix column is exactly one Gantt time division', () => {
     const layout = { ...DEFAULT_EXCEL_LAYOUT }
-    const step = matrixStep(600_000, CONFIG, layout)
-    expect(step % CONFIG.scaleMs).toBe(0)
-    expect(Math.ceil(600_000 / step)).toBeLessThanOrEqual(180)
+    expect(matrixStep(600_000, CONFIG, layout)).toBe(CONFIG.scaleMs)
+    // An explicit legacy span still overrides the default.
+    expect(matrixStep(600_000, CONFIG, { ...layout, matrixStepMs: 250 })).toBe(250)
+  })
+
+  it('Excel matrix cells follow the UI ms/division and px/division', async () => {
+    const project = fixture()
+    project.timeConfig = { ...CONFIG, scaleMs: 50 }
+    project.ganttConfig = { ...DEFAULT_GANTT_CONFIG, pxPerMs: 0.6 }
+    const schedule = computeSchedule(project.modules, project.timeConfig)
+    const blob = await buildGanttWorkbook({
+      project, schedule, rows: flattenTree(schedule), now: new Date('2026-01-01T00:00:00Z')
+    })
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    await wb.xlsx.load(await blob.arrayBuffer())
+    const matrix = wb.getWorksheet('甘特矩阵')!
+    const resources = wb.getWorksheet('资源甘特图')!
+    const buckets = Math.ceil((schedule.totalMs + 50) / 50)
+    expect(matrix.columnCount).toBe(3 + buckets)
+    // 0.6 px/ms × 50 ms = 30 px per division ≈ 4.3 Excel characters.
+    expect(matrix.getColumn(4).width).toBeCloseTo(30 / 7, 1)
+    expect(resources.getColumn(5).width).toBeCloseTo(30 / 7, 1)
   })
 
   it('round-trips absolute sub-action time (legacy offset column is no longer the source)', async () => {

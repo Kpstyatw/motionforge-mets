@@ -1,5 +1,5 @@
 // Preferences configuration types
-import { ProjectFileFormat } from '@/types'
+import { GanttConfig, ProjectFileFormat, TimeConfig } from '@/types'
 
 export interface GridPreferences {
   cellWidth: number
@@ -25,11 +25,18 @@ export interface FilePreferences {
   defaultFormat: ProjectFileFormat
 }
 
+/** Time-scale dialog values, remembered across sessions and new projects. */
+export interface TimeScalePreferences {
+  timeConfig: TimeConfig
+  ganttConfig: GanttConfig
+}
+
 export interface Preferences {
   grid: GridPreferences
   animation: AnimationPreferences
   ui: UIPreferences
   file: FilePreferences
+  timeScale: TimeScalePreferences
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -52,5 +59,15 @@ export const DEFAULT_PREFERENCES: Preferences = {
   file: {
     // JSON is the recommended default: plain text and the full project model.
     defaultFormat: 'json'
+  },
+  timeScale: {
+    timeConfig: { scaleMs: 100, precisionMs: 1, displayUnit: 'ms' },
+    ganttConfig: {
+      pxPerMs: 0.35,
+      rowHeight: 34,
+      showDependencies: true,
+      showSummaries: true,
+      showModuleSummaryBars: true
+    }
   }
 }

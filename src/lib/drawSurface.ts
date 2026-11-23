@@ -21,7 +21,7 @@ export interface TextStyle {
   fill: string
   fontSize: number
   fontFamily: string
-  align?: 'left' | 'center'
+  align?: 'left' | 'center' | 'right'
   /**
    * Outline colour drawn behind the glyphs so a label stays readable over any
    * cell fill. A real outline rather than an offset copy: the offset trick
@@ -80,6 +80,27 @@ export class CanvasSurface implements DrawSurface {
   }
 }
 
+/**
+ * Shifts every x coordinate to the right. Lets the PDF report prepend a
+ * hierarchy label column to the timing chart without duplicating any of the
+ * chart drawing code — the chart still paints as if it started at x=0.
+ */
+export class OffsetSurface implements DrawSurface {
+  constructor(private readonly base: DrawSurface, private readonly dx: number) {}
+
+  rect(x: number, y: number, w: number, h: number, style: RectStyle): void {
+    this.base.rect(x + this.dx, y, w, h, style)
+  }
+
+  line(x1: number, y1: number, x2: number, y2: number, stroke: string, lineWidth: number): void {
+    this.base.line(x1 + this.dx, y1, x2 + this.dx, y2, stroke, lineWidth)
+  }
+
+  text(content: string, x: number, y: number, style: TextStyle): void {
+    this.base.text(content, x + this.dx, y, style)
+  }
+}
+
 function escapeXml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -130,7 +151,7 @@ export class SvgSurface implements DrawSurface {
 
   text(content: string, x: number, y: number, style: TextStyle): void {
     if (!content) return
-    const anchor = style.align === 'center' ? 'middle' : 'start'
+    const anchor = style.align === 'center' ? 'middle' : style.align === 'right' ? 'end' : 'start'
     // paint-order puts the stroke under the fill, giving a true outline.
     const halo = style.halo
       ? ` stroke="${style.halo}" stroke-width="${n(style.haloWidth ?? 2)}"` +

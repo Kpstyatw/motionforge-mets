@@ -49,7 +49,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onO
   const { grid, animation, ui } = usePreferencesStore()
   // The video camera starts from the zoom on screen and the rate defaults to
   // the one being played, so the file matches what the user has been watching.
-  const { zoom, followPlayback, followBaseZoom } = useUIStore()
+  const { zoom, followPlayback, followBaseZoom, collapsedTaskIds, hiddenTaskIds } = useUIStore()
   const playbackSpeed = useAnimationStore(state => state.speed)
   const [isExporting, setIsExporting] = useState(false)
   const [includeCalculatedPositions, setIncludeCalculatedPositions] = useState(true)
@@ -75,6 +75,24 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onO
     displayUnit: project?.timeConfig?.displayUnit ?? 'ms',
     showDependencies: true
   })
+
+  /**
+   * The Gantt/PDF report is a different surface from the beat grid: its zoom
+   * is `ganttConfig.pxPerMs` (set in the time-scale dialog), not the grid's
+   * `cellWidth` preference. Derive the per-division pixel width from that same
+   * px/ms, otherwise the PDF silently uses a different time scale from the
+   * Gantt chart the user just approved.
+   */
+  const pdfRenderConfig = (): RenderConfig => {
+    const scaleMs = project?.timeConfig?.scaleMs ?? 100
+    const pxPerMs = project?.ganttConfig?.pxPerMs ?? 0.35
+    return {
+      ...renderConfig(),
+      cellWidth: Math.max(1, pxPerMs * scaleMs),
+      cellHeight: project?.ganttConfig?.rowHeight ?? grid.cellHeight,
+      showDependencies: project?.ganttConfig?.showDependencies ?? true
+    }
+  }
 
   if (!isOpen) return null
   // The online edition produces nothing downloadable; it points at the desktop app.
@@ -116,10 +134,13 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onO
       const report = buildPdfReport({
         projectName: project.name,
         modules: project.modules,
-        config: renderConfig(),
+        config: pdfRenderConfig(),
         resources: project.resources,
         allocations: project.allocations,
         cycleConfig: project.cycleConfig,
+        // The report mirrors exactly what the Gantt currently draws.
+        collapsedTaskIds,
+        hiddenTaskIds,
         labels: {
           chartPage: t('export.pdf.report.chartPage'),
           resourceChartPage: t('export.pdf.report.resourceChartPage'),
@@ -128,6 +149,14 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({ isOpen, onClose, onO
           moduleCount: t('export.pdf.report.moduleCount'),
           exportedAt: t('export.pdf.report.exportedAt'),
           untitledProject: t('export.pdf.report.untitledProject'),
+          hierarchy: t('gantt.hierarchy'),
+          startEnd: t('export.pdf.report.startEnd', { defaultValue: '起止' }),
+          kindLabels: {
+            module: t('gantt.kind.module'),
+            mechanism: t('gantt.kind.mechanism'),
+            action: t('gantt.kind.action'),
+            subaction: t('gantt.kind.subaction')
+          },
           columns: {
             module: t('export.pdf.report.columns.module'),
             action: t('export.pdf.report.columns.action'),

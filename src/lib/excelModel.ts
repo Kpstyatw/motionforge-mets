@@ -8,8 +8,11 @@ import { MODULE_COLORS } from '@/stores/useProjectStore'
  * can render and verify data without loading a megabyte of spreadsheet code.
  */
 
-/** Excel caps columns at 16384; keep the matrix comfortably printable. */
-export const MATRIX_MAX_COLUMNS = 180
+/**
+ * Excel caps columns at 16384. One matrix column is now exactly one Gantt
+ * time division (config.scaleMs), so the cap is a hard safety limit only.
+ */
+export const MATRIX_MAX_COLUMNS = 16000
 
 export const COLUMN_KEYS = [
   'code', 'level', 'kind', 'module', 'mechanism', 'action', 'stage', 'resourceId',
@@ -96,11 +99,15 @@ export function buildExcelRows(schedule: ScheduleResult, rows: TreeRow[]): Excel
   })
 }
 
-/** Time-bucket step for sheet 2, snapped to a whole number of scale divisions. */
-export function matrixStep(totalMs: number, config: TimeConfig, layout: ExcelLayoutConfig): number {
-  if (layout.matrixStepMs > 0) return Math.max(config.scaleMs, Math.round(layout.matrixStepMs))
-  const raw = Math.max(config.scaleMs, Math.ceil(totalMs / MATRIX_MAX_COLUMNS))
-  return Math.max(config.scaleMs, Math.ceil(raw / config.scaleMs) * config.scaleMs)
+/**
+ * Time span of one Excel matrix cell. By default it is exactly one Gantt time
+ * division (`scaleMs`) so the sheet matches the UI ruler cell-for-cell; an
+ * explicit `matrixStepMs` remains available as a legacy override.
+ */
+export function matrixStep(_totalMs: number, config: TimeConfig, layout: ExcelLayoutConfig): number {
+  const scale = Math.max(1, Math.round(config.scaleMs))
+  if (layout.matrixStepMs > 0) return Math.max(scale, Math.round(layout.matrixStepMs))
+  return scale
 }
 
 export function excelFileName(projectName: string): string {

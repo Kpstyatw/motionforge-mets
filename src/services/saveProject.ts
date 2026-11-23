@@ -19,6 +19,8 @@ export interface SaveProjectInput {
   project: ProjectData
   schedule: ScheduleResult
   rows: TreeRow[]
+  /** Template ids currently hidden in the chart; written as hidden Excel rows. */
+  hiddenRowIds?: Set<string>
   /** Expansion data so multi-cycle Excel rows round-trip like the UI export. */
   allocations: ProjectData['allocations']
   cycleConfig: ProjectData['cycleConfig']
@@ -95,6 +97,7 @@ async function buildSavePayload(input: SaveProjectInput, format: ProjectFileForm
     },
     schedule: input.schedule,
     rows: input.rows,
+    hiddenRowIds: input.hiddenRowIds,
     layout: snapshot.excelLayout
   })
   return { blob }

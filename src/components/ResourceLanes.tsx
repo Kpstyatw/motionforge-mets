@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ResourceSchedule, resourceBusyMs, ResourceLane } from '@/lib/resourceScheduler'
-import { ResourceOwner, resourceChain } from '@/lib/resourceTree'
+import { ResourceSchedule, resourceBusyMs } from '@/lib/resourceScheduler'
+import { ResourceOwner } from '@/lib/resourceTree'
+import { buildResourceViewRows, ResourceViewRow } from '@/lib/resourceLanesView'
 import { ScheduleResult } from '@/lib/dependencyEngine'
 import { cycleIndexOf, templateIdOf } from '@/lib/cycleEngine'
 import { formatTime } from '@/lib/timeScale'
@@ -24,9 +25,7 @@ const HEADER_HEIGHT = 46
 const RESOURCE_ROW_H = 42
 const GROUP_ROW_H = 28
 
-type ViewRow =
-  | { kind: 'module' | 'mechanism'; key: string; name: string; top: number; height: number; count: number }
-  | { kind: 'resource'; key: string; name: string; top: number; height: number; lane: ResourceLane; indent: number }
+type ViewRow = ResourceViewRow & { top: number; height: number }
 
 interface ResourceLanesProps {
   resourceSchedule: ResourceSchedule
@@ -51,81 +50,22 @@ export const ResourceLanes: React.FC<ResourceLanesProps> = ({
   const lanes = resourceSchedule.lanes
   const conflictIds = useMemo(() => new Set(resourceSchedule.conflicts.map(c => c.id)), [resourceSchedule.conflicts])
 
-  // A resource inherits the ownership of its nearest bound ancestor (a rotary
-  // slot sits under the plate that is actually bound to a mechanism).
-  const resources = useMemo(() => lanes.map(l => l.resource), [lanes])
-
   const viewRows = useMemo(() => {
-    interface Group {
-      moduleKey: string; moduleName: string
-      // Resources bound directly to the module (no mechanism) sit here and
-      // render under the module header without an empty mechanism row.
-      direct: Array<{ lane: ResourceLane; indent: number }>
-      mechs: Map<string, { name: string; items: Array<{ lane: ResourceLane; indent: number }> }>
-    }
-    const groups = new Map<string, Group>()
-    const loose: Array<{ lane: ResourceLane; indent: number }> = []
-
-    for (const lane of lanes) {
-      const chain = resourceChain(lane.resource.id, resources)
-      let owner: ResourceOwner | undefined
-      let dist = 0
-      for (let d = 0; d < chain.length; d++) {
-        const o = resourceOwners.get(chain[d])
-        if (o) { owner = o; dist = d; break }
-      }
-      const item = { lane, indent: dist }
-      if (!owner) { loose.push(item); continue }
-      const moduleKey = owner.moduleId || `__m__${owner.moduleName}`
-      let group = groups.get(moduleKey)
-      if (!group) {
-        group = { moduleKey, moduleName: owner.moduleName, direct: [], mechs: new Map() }
-        groups.set(moduleKey, group)
-      }
-      if (!owner.mechanismId) { group.direct.push(item); continue }
-      let mech = group.mechs.get(owner.mechanismId)
-      if (!mech) {
-        mech = { name: owner.mechanismName, items: [] }
-        group.mechs.set(owner.mechanismId, mech)
-      }
-      mech.items.push(item)
-    }
-
-    const rows: ViewRow[] = []
+    // One projection for the screen and both exporters: module → mechanism →
+    // resource, with the same group order and resource indentation everywhere.
+    const projected = buildResourceViewRows(lanes, resourceOwners, {
+      ungroupedModule: t('resource.ungroupedModule', { defaultValue: '未归属模块' }),
+      ungroupedMechanism: t('resource.ungrouped', { defaultValue: '未分组资源' })
+    })
     let top = 0
-    const pushModule = (name: string, count: number) => {
-      const label = name || t('resource.ungroupedModule', { defaultValue: '未归属模块' })
-      rows.push({ kind: 'module', key: `mod:${label}`, name: label, top, height: GROUP_ROW_H, count })
-      top += GROUP_ROW_H
-    }
-    const pushMech = (name: string, key: string, count: number) => {
-      rows.push({ kind: 'mechanism', key: `mech:${key}`, name, top, height: GROUP_ROW_H, count })
-      top += GROUP_ROW_H
-    }
-    const pushResource = (item: { lane: ResourceLane; indent: number }) => {
-      rows.push({
-        kind: 'resource', key: `res:${item.lane.resource.id}`, name: item.lane.resource.name,
-        top, height: RESOURCE_ROW_H, lane: item.lane, indent: item.indent
-      })
-      top += RESOURCE_ROW_H
-    }
-
-    for (const group of groups.values()) {
-      const mechCount = [...group.mechs.values()].reduce((n, m) => n + m.items.length, 0)
-      pushModule(group.moduleName, mechCount + group.direct.length)
-      group.direct.forEach(pushResource)
-      for (const [mechKey, mech] of group.mechs) {
-        pushMech(mech.name, mechKey, mech.items.length)
-        mech.items.forEach(pushResource)
-      }
-    }
-    if (loose.length) {
-      pushModule('', loose.length)
-      pushMech(t('resource.ungrouped', { defaultValue: '未分组资源' }), '__loose__', loose.length)
-      loose.forEach(pushResource)
-    }
+    const rows: ViewRow[] = projected.map(row => {
+      const height = row.kind === 'resource' ? RESOURCE_ROW_H : GROUP_ROW_H
+      const positioned = { ...row, top, height } as ViewRow
+      top += height
+      return positioned
+    })
     return { rows, totalHeight: top }
-  }, [lanes, resources, resourceOwners, t])
+  }, [lanes, resourceOwners, t])
 
   const bodyHeight = Math.max(240, viewRows.totalHeight + 40)
   const resourceTop = useMemo(() => {

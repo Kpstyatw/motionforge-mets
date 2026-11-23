@@ -337,6 +337,29 @@ export function resolvePredecessorLeaf(schedule: ScheduleResult, candidateId: st
   return bestId
 }
 
+/**
+ * Row an edge should attach to when drawn. The editor stores a container
+ * choice on its latest-ending leaf because the scheduler only accepts leaves,
+ * but the user picked the container. Lift that leaf back up for drawing so a
+ * dependency always lands on the task the user chose — container or leaf —
+ * instead of an arbitrary sub-action.
+ */
+export function predecessorDisplayId(schedule: ScheduleResult, leafId: string): string {
+  let current = leafId
+  const guard = new Set<string>()
+  while (!guard.has(current)) {
+    guard.add(current)
+    const node = schedule.byId[current]
+    const parentId = node?.parentId
+    if (!parentId) break
+    const parent = schedule.byId[parentId]
+    if (!parent || parent.isLeaf || parent.isSummary) break
+    if (resolvePredecessorLeaf(schedule, parentId) !== current) break
+    current = parentId
+  }
+  return current
+}
+
 function depthOf(m: ModuleData, byId: Map<string, ModuleData>): number {
   let depth = 0
   let parent = m.parentId ? byId.get(m.parentId) : undefined
@@ -397,6 +420,20 @@ export function flattenTree(schedule: ScheduleResult, collapsedIds: Set<string> 
   // Orphans (a parentId pointing at a missing row) still need to be visible.
   schedule.tasks.forEach(t => { if (!visited.has(t.id)) visit(t.id) })
   return out
+}
+
+/**
+ * The rows the on-screen Gantt actually draws: collapse omits descendants and
+ * explicit hide removes the row (its whole subtree was expanded into hiddenIds
+ * when it was hidden). Exports must mirror this projection instead of assuming
+ * every scheduled task is visible.
+ */
+export function visibleTreeRows(
+  schedule: ScheduleResult,
+  collapsedIds: Set<string> = new Set(),
+  hiddenIds: Set<string> = new Set()
+): TreeRow[] {
+  return flattenTree(schedule, collapsedIds).filter(row => !hiddenIds.has(row.task.id))
 }
 
 // ---------------------------------------------------------------------------

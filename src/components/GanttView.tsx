@@ -12,6 +12,7 @@ import {
 } from '@/lib/cycleEngine'
 import { measureTextWidth, fitTextToWidth, computeLabelWidth } from '@/lib/labelWidth'
 import { formatTime, rulerTicks } from '@/lib/timeScale'
+import { routeDependencyArrow } from '@/lib/dependencyArrow'
 import { CycleDialog } from './CycleDialog'
 import { ResourceLanes } from './ResourceLanes'
 import { TaskKind } from '@/types'
@@ -244,8 +245,11 @@ export const GanttView: React.FC<GanttViewProps> = ({
         const x2 = (endAtFinish ? task.endMs : task.startMs) * pxPerMs
         const y1 = barY(fromRow) + barH / 2
         const y2 = barY(toRow) + barH / 2
-        const elbow = Math.max(x1 + 10, x2 - 14)
-        const d = `M ${x1} ${y1} L ${elbow} ${y1} L ${elbow} ${y2} L ${x2} ${y2}`
+        const d = routeDependencyArrow({
+          x1, y1, x2, y2, barH,
+          leaveRight: startFromEnd,
+          enterLeft: !endAtFinish
+        })
         paths.push({
           d, id: dep.id, from: fromId, to: toId,
           text: `${pred.code} → ${task.code} (${dep.type} ${dep.lagMs >= 0 ? '+' : ''}${dep.lagMs}ms)`

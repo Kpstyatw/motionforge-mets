@@ -185,4 +185,25 @@ describe('Gantt readability', () => {
     expect(Number(bands[0][2])).toBe(0)
     expect(Number(bands[0][3])).toBeCloseTo(350, 0) // 1000 ms × 0.35 px/ms
   })
+
+  it('routes a tight dependency around the bars instead of back left through them', () => {
+    // A1 ends at 100 ms and A2 starts at 100 ms (FS, lag 0). The old elbow
+    // (max(x1+10, x2-14)) produced a leg from x1+10 back left to x2 that
+    // crossed the target bar. Assert the rendered path now approaches from
+    // the left and never has a horizontal leg ending to the left of x2.
+    load({ enabled: false, cycleMs: 1000, repeats: 1 })
+    useProjectStore.getState().setGanttConfig({ pxPerMs: 0.35 })
+    const html = renderToStaticMarkup(React.createElement(GanttView, props))
+    const d = html.match(/<path[^>]*?d="([^"]+)"[^>]*marker-end="url\(#gantt-arrow\)"/)?.[1]
+      ?? html.match(/<path[^>]*marker-end="url\(#gantt-arrow\)"[^>]*?d="([^"]+)"/)?.[1]
+    expect(d).toBeTruthy()
+    const nums = [...d!.matchAll(/[ML] ([\d.-]+) ([\d.-]+)/g)].map(m => [Number(m[1]), Number(m[2])])
+    const last = nums[nums.length - 1]
+    const prev = nums[nums.length - 2]
+    // x2 = 100 ms × 0.35 = 35. Final hop must come from the LEFT (x < 35).
+    expect(last[0]).toBeCloseTo(35, 0)
+    expect(prev[0]).toBeLessThan(last[0])
+    // Gutter route has 6 points; the old back-tracking elbow had only 4.
+    expect(nums.length).toBeGreaterThanOrEqual(6)
+  })
 })

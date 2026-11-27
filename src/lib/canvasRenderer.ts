@@ -2,6 +2,7 @@ import { ModuleData, TimeConfig } from '@/types'
 import { computeActionStartTimes, startMsOf, durationMsOf } from './timingModel'
 import { CanvasSurface, DrawSurface, SvgSurface } from './drawSurface'
 import { formatTime, normalizeTimeConfig, rulerTicks } from './timeScale'
+import { arrowHead, dependencyArrowPoints, DEPENDENCY_ARROW_COLOR } from './dependencyArrow'
 
 /**
  * Timing chart renderer — every pixel of the chart is drawn here.
@@ -32,7 +33,7 @@ const LABEL_INK = '#12161B'
 const LABEL_HALO = 'rgba(255, 255, 255, 0.92)'
 const LABEL_HALO_WIDTH = 3
 const MIN_LABEL_FONT_SIZE = 6
-const LINK_COLOR = '#f97316'
+const LINK_COLOR = DEPENDENCY_ARROW_COLOR
 
 function labelFontSize(cellHeight: number): number {
   return Math.round(Math.min(22, cellHeight * 0.42))
@@ -245,18 +246,26 @@ export function drawDependencyLinks(
       const predRow = rowOf.get(pred.id) ?? 0
       const predStart = startMsOf(pred)
       const predEnd = predStart + durationMsOf(pred)
-      const fromX = (dep.type === 'SS' || dep.type === 'SF' ? predStart : predEnd) * px
-      const toX = (dep.type === 'FF' || dep.type === 'SF' ? succEnd : succStart) * px
+      const startFromEnd = dep.type === 'FS' || dep.type === 'FF'
+      const endAtFinish = dep.type === 'FF' || dep.type === 'SF'
+      const fromX = (startFromEnd ? predEnd : predStart) * px
+      const toX = (endAtFinish ? succEnd : succStart) * px
       const fromY = headerHeight + predRow * config.cellHeight + config.cellHeight / 2
       const toY = headerHeight + succRow * config.cellHeight + config.cellHeight / 2
 
-      const elbowX = Math.max(fromX + 8, toX - 12)
-      surface.line(fromX, fromY, elbowX, fromY, LINK_COLOR, 1)
-      surface.line(elbowX, fromY, elbowX, toY, LINK_COLOR, 1)
-      surface.line(elbowX, toY, toX, toY, LINK_COLOR, 1)
-      // Arrowhead (two short strokes).
-      surface.line(toX, toY, toX - 6, toY - 3, LINK_COLOR, 1)
-      surface.line(toX, toY, toX - 6, toY + 3, LINK_COLOR, 1)
+      // Same router as the Gantt/PDF charts — no leftward leg through a bar.
+      const pts = dependencyArrowPoints({
+        x1: fromX, y1: fromY, x2: toX, y2: toY,
+        barH: config.cellHeight * 0.56,
+        leaveRight: startFromEnd,
+        enterLeft: !endAtFinish
+      })
+      for (let i = 1; i < pts.length; i++) {
+        surface.line(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1], LINK_COLOR, 1)
+      }
+      const [w1, w2] = arrowHead(pts)
+      surface.line(toX, toY, w1[0], w1[1], LINK_COLOR, 1)
+      surface.line(toX, toY, w2[0], w2[1], LINK_COLOR, 1)
     })
   })
 }

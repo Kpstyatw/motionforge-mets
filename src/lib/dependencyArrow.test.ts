@@ -1,9 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { routeDependencyArrow } from './dependencyArrow'
+import {
+  routeDependencyArrow, DEPENDENCY_ARROW_COLOR, isArrowReservedColor, safeBarColor
+} from './dependencyArrow'
 
 /** Parse an SVG path into its point list (only M/L commands are emitted). */
 const points = (d: string): Array<[number, number]> =>
   [...d.matchAll(/[ML] ([\d.-]+) ([\d.-]+)/g)].map(m => [Number(m[1]), Number(m[2])])
+
+describe('dependency arrow colour reservation', () => {
+  it('reserves black in every common spelling', () => {
+    expect(DEPENDENCY_ARROW_COLOR).toBe('#000000')
+    for (const value of ['#000000', '#000', '000000', 'black', 'rgb(0,0,0)', 'rgb(0, 0, 0)', ' #000000 ']) {
+      expect(isArrowReservedColor(value)).toBe(true)
+    }
+  })
+
+  it('accepts ordinary bar colours and keeps missing colours untouched', () => {
+    for (const value of ['#3b82f6', '#f97316', '#010101', '#111111', undefined, null, '']) {
+      expect(isArrowReservedColor(value)).toBe(false)
+    }
+    expect(safeBarColor('#000000', '#3b82f6')).toBe('#3b82f6')
+    expect(safeBarColor('#f97316', '#3b82f6')).toBe('#f97316')
+    expect(safeBarColor(undefined, '#3b82f6')).toBeUndefined()
+  })
+})
 
 describe('dependency arrow routing', () => {
   it('uses a compact forward elbow for a normal FS edge with room', () => {

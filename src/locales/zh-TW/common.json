@@ -374,6 +374,8 @@
     "color": "顏色",
     "applyColorToChildren": "同步到所有下級",
     "colorHint": "顏色用於甘特條、資源泳道、Excel 顏色欄和 PDF；勾選後同步給整棵子樹，未勾選只改當前節點。",
+    "colorReserved": "該顏色保留給依賴箭頭",
+    "colorReservedHint": "黑色專用於依賴連線，請為柱狀圖選擇其他顏色。",
     "kind": {
       "module": "模組",
       "mechanism": "機構",

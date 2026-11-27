@@ -15,6 +15,27 @@
  *    points AT the anchor, never back across a bar.
  */
 
+/**
+ * Reserved dependency-arrow colour. Bars must never use it, otherwise an
+ * arrow can disappear into a bar of the same colour. Kept here so the on-screen
+ * Gantt, the PDF report and the canvas/MP4 renderer cannot drift apart.
+ */
+export const DEPENDENCY_ARROW_COLOR = '#000000'
+
+/** True when a candidate bar colour collides with the reserved arrow colour. */
+export function isArrowReservedColor(color: string | undefined | null): boolean {
+  if (!color) return false
+  const s = color.trim().toLowerCase()
+  if (s === 'black' || s === 'rgb(0,0,0)' || s === 'rgb(0, 0, 0)') return true
+  const digits = s.replace(/^#/, '')
+  return /^0{3}(?:0{3})?$/.test(digits)
+}
+
+/** Fall back to a safe bar colour when the requested one is reserved. */
+export function safeBarColor(color: string | undefined, fallback: string): string | undefined {
+  return isArrowReservedColor(color) ? fallback : color
+}
+
 export interface ArrowRouteInput {
   /** source anchor (x) */
   x1: number
@@ -39,7 +60,10 @@ const MIN_SIMPLE_GAP = 28
 
 const r = (v: number) => Math.round(v * 10) / 10
 
-export function routeDependencyArrow(input: ArrowRouteInput): string {
+export type ArrowPoint = [number, number]
+
+/** The polyline points, shared by the SVG path, PDF SVG and canvas renderers. */
+export function dependencyArrowPoints(input: ArrowRouteInput): ArrowPoint[] {
   const { x1, y1, x2, y2, barH, leaveRight, enterLeft } = input
   const departX = leaveRight ? x1 + STUB : x1 - STUB
   const approachX = enterLeft ? x2 - STUB : x2 + STUB
@@ -48,7 +72,7 @@ export function routeDependencyArrow(input: ArrowRouteInput): string {
   // leg in the middle of the gap. Both horizontal legs point forward.
   if (leaveRight && enterLeft && x2 - x1 >= MIN_SIMPLE_GAP) {
     const legX = x1 + (x2 - x1) / 2
-    return `M ${r(x1)} ${r(y1)} L ${r(legX)} ${r(y1)} L ${r(legX)} ${r(y2)} L ${r(x2)} ${r(y2)}`
+    return [[x1, y1], [legX, y1], [legX, y2], [x2, y2]]
   }
 
   // Gutter route. Leave on the outward side, run along a lane just outside the
@@ -56,7 +80,7 @@ export function routeDependencyArrow(input: ArrowRouteInput): string {
   // stays outside the target bar, so the last hop never crosses it.
   const dir = y2 >= y1 ? 1 : -1
   const gutterY = y1 + dir * (barH / 2 + GUTTER)
-  const points: Array<[number, number]> = [
+  return [
     [x1, y1],
     [departX, y1],
     [departX, gutterY],
@@ -64,7 +88,31 @@ export function routeDependencyArrow(input: ArrowRouteInput): string {
     [approachX, y2],
     [x2, y2]
   ]
-  return points
+}
+
+/** SVG path string for the on-screen Gantt (marker handles the arrow head). */
+export function routeDependencyArrow(input: ArrowRouteInput): string {
+  return dependencyArrowPoints(input)
     .map(([x, y], i) => `${i === 0 ? 'M' : 'L'} ${r(x)} ${r(y)}`)
     .join(' ')
+}
+
+/**
+ * Arrow-head wings at the end of a polyline, for renderers that draw the head
+ * themselves (PDF SVG / canvas). `size` is the head length.
+ */
+export function arrowHead(points: ArrowPoint[], size = 6): [ArrowPoint, ArrowPoint] {
+  const end = points[points.length - 1]
+  const prev = points[points.length - 2] ?? [end[0] - size, end[1]]
+  let dx = end[0] - prev[0]
+  let dy = end[1] - prev[1]
+  const len = Math.hypot(dx, dy) || 1
+  dx /= len
+  dy /= len
+  const half = size * 0.5
+  // Two wings behind the tip, perpendicular to the final approach direction.
+  return [
+    [end[0] - dx * size - dy * half, end[1] - dy * size + dx * half],
+    [end[0] - dx * size + dy * half, end[1] - dy * size - dx * half]
+  ]
 }

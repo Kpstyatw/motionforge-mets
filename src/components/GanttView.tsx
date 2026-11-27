@@ -12,7 +12,7 @@ import {
 } from '@/lib/cycleEngine'
 import { measureTextWidth, fitTextToWidth, computeLabelWidth } from '@/lib/labelWidth'
 import { formatTime, rulerTicks } from '@/lib/timeScale'
-import { routeDependencyArrow } from '@/lib/dependencyArrow'
+import { routeDependencyArrow, DEPENDENCY_ARROW_COLOR } from '@/lib/dependencyArrow'
 import { CycleDialog } from './CycleDialog'
 import { ResourceLanes } from './ResourceLanes'
 import { TaskKind } from '@/types'
@@ -502,7 +502,7 @@ export const GanttView: React.FC<GanttViewProps> = ({
             >
               <defs>
                 <marker id="gantt-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-                  <path d="M0,0 L7,3.5 L0,7 z" fill="#f97316" />
+                  <path d="M0,0 L7,3.5 L0,7 z" fill={DEPENDENCY_ARROW_COLOR} />
                 </marker>
               </defs>
 
@@ -561,7 +561,7 @@ export const GanttView: React.FC<GanttViewProps> = ({
                 const active = !selectedTaskId || !chain ||
                   (chain.has(link.from) && chain.has(link.to))
                 return (
-                  <path key={link.id} d={link.d} fill="none" stroke="#f97316"
+                  <path key={link.id} d={link.d} fill="none" stroke={DEPENDENCY_ARROW_COLOR}
                     strokeWidth={active ? 1.6 : 1} strokeOpacity={active ? 0.95 : 0.2}
                     markerEnd="url(#gantt-arrow)">
                     <title>{link.text}</title>

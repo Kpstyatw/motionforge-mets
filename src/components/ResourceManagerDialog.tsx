@@ -4,6 +4,7 @@ import { useProjectStore } from '@/stores/useProjectStore'
 import { resourceDepth, buildResourceOwnerIndex, filterResourceRows } from '@/lib/resourceTree'
 import { checkNewName, findNameIssues, NameIssue, translateNameIssue } from '@/lib/nameValidation'
 import { toast } from '@/components/ui/use-toast'
+import { isArrowReservedColor } from '@/lib/dependencyArrow'
 import { Resource } from '@/types'
 import { Plus, Trash2, ChevronRight, ChevronDown, Pencil } from 'lucide-react'
 
@@ -170,6 +171,19 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
     })
   }
 
+  const commitColor = (r: Resource, value: string) => {
+    // Same reservation as task bars: black belongs to dependency arrows only.
+    if (isArrowReservedColor(value)) {
+      toast({
+        variant: 'destructive',
+        title: t('gantt.colorReserved', { defaultValue: '该颜色保留给依赖箭头' }),
+        description: t('gantt.colorReservedHint', { defaultValue: '黑色专用于依赖连线，请为柱形图选择其他颜色。' })
+      })
+      return
+    }
+    updateResource(r.id, { color: value })
+  }
+
   const commitName = (r: Resource, text: string) => {
     const trimmed = text.trim()
     const issue: NameIssue = {
@@ -288,7 +302,7 @@ export const ResourceManagerDialog: React.FC<Props> = ({ isOpen, onClose, focusR
                       </button>
                     )}
                     <input type="color" value={r.color || '#6366f1'} className="w-7 h-7 border-0 bg-transparent p-0 cursor-pointer shrink-0"
-                      onChange={e => updateResource(r.id, { color: e.target.value })} />
+                      onChange={e => commitColor(r, e.target.value)} />
                     <input
                       className={`flex-1 min-w-0 px-1 py-0.5 text-sm border rounded bg-background ${duplicateIds.has(r.id) ? 'border-red-500 text-red-500' : ''}`}
                       value={drafts[r.id] ?? r.name}

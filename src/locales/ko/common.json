@@ -374,6 +374,8 @@
     "color": "색상",
     "applyColorToChildren": "모든 하위 노드에 적용",
     "colorHint": "간트 막대, 리소스 레인, Excel 색상 열 및 PDF에 사용됩니다. 선택하면 전체 하위 트리에 적용되고, 선택하지 않으면 현재 노드만 변경됩니다.",
+    "colorReserved": "해당 색은 의존성 화살표용으로 예약되었습니다",
+    "colorReservedHint": "검정은 의존성 연결 전용입니다. 막대에는 다른 색을 선택하세요.",
     "kind": {
       "module": "모듈",
       "mechanism": "기구",

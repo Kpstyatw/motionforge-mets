@@ -374,6 +374,8 @@
     "color": "Colour",
     "applyColorToChildren": "Apply to all descendants",
     "colorHint": "Used by Gantt bars, resource lanes, the Excel colour column and PDF. Tick to apply to the whole subtree; otherwise only this node changes.",
+    "colorReserved": "That colour is reserved for dependency arrows",
+    "colorReservedHint": "Black is reserved for dependency links. Pick another colour for the bars.",
     "kind": {
       "module": "Module",
       "mechanism": "Mechanism",

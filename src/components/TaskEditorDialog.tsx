@@ -11,6 +11,7 @@ import { normalizeTimeConfig, parseTimeInput, quantize, describeDuration } from 
 import { NameIssue, translateNameIssue } from '@/lib/nameValidation'
 import { DependencyType, TaskKind } from '@/types'
 import { toast } from '@/components/ui/use-toast'
+import { isArrowReservedColor } from '@/lib/dependencyArrow'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Plus, Trash2, Link2, GitBranch, Boxes } from 'lucide-react'
 
@@ -191,6 +192,16 @@ export const TaskEditorDialog: React.FC<TaskEditorDialogProps> = ({ taskId, onCl
     const next = /^#[0-9a-f]{6}$/i.test(value)
       ? value
       : digits.length === 6 ? `#${digits}` : MODULE_COLORS[0]
+    // Black is reserved for dependency arrows so a bar can never swallow an
+    // arrow. Reject it here with feedback rather than silently accepting it.
+    if (isArrowReservedColor(next)) {
+      toast({
+        variant: 'destructive',
+        title: t('gantt.colorReserved', { defaultValue: '该颜色保留给依赖箭头' }),
+        description: t('gantt.colorReservedHint', { defaultValue: '黑色专用于依赖连线，请为柱形图选择其他颜色。' })
+      })
+      return
+    }
     setColor(next)
     setTaskColor(task.id, next, applyColorToChildren)
   }

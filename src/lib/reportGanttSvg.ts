@@ -5,6 +5,7 @@ import { RenderConfig } from './canvasRenderer'
 import { OffsetSurface, SvgSurface } from './drawSurface'
 import { formatTime, rulerTicks } from './timeScale'
 import { computeLabelWidth, fitTextToWidth } from './labelWidth'
+import { arrowHead, dependencyArrowPoints, DEPENDENCY_ARROW_COLOR } from './dependencyArrow'
 
 /**
  * Timing chart for the PDF report — standalone vector SVG with a left
@@ -22,7 +23,7 @@ const FONT =
   '"Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK SC", "Noto Sans CJK KR", system-ui, sans-serif'
 const MONO = 'ui-monospace, "SFMono-Regular", Consolas, monospace'
 const HEADER_HEIGHT = 40
-const LINK_COLOR = '#f97316'
+const LINK_COLOR = DEPENDENCY_ARROW_COLOR
 
 function hexToRgba(hex: string, alpha: number): string {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
@@ -177,10 +178,52 @@ export function renderReportGanttSvg(options: ReportGanttSvgOptions): string {
     })
   })
 
-  // Bars: one row per template task, one bar per cycle instance.
   const instancesOf = (templateId: string): string[] =>
     expansion.templateToInstances[templateId] ?? [templateId]
 
+  // Dependency arrows are painted BEFORE the bars. The bars (and their white
+  // in-bar labels) then land on top, so a black arrow can never cross out a
+  // task name — the same layering the on-screen Gantt uses.
+  if (config.showDependencies !== false) {
+    rows.forEach(row => {
+      instancesOf(row.task.id).forEach(id => {
+        const succ = schedule.byId[id]
+        if (!succ) return
+        const succRow = rowOf.get(row.task.id) ?? 0
+        ;(succ.module.predecessors ?? []).forEach(dep => {
+          const pred = schedule.byId[dep.fromId]
+          if (!pred) return
+          // Container choices are stored on their latest leaf. Draw the edge
+          // on the picked container row so it matches the on-screen Gantt.
+          const displayId = predecessorDisplayId(schedule, pred.id)
+          const predTemplate = expansion.instanceToTemplate[displayId] ?? displayId
+          const predRow = rowOf.get(predTemplate) ?? rowOf.get(displayId)
+          if (predRow === undefined) return
+          const startFromEnd = dep.type === 'FS' || dep.type === 'FF'
+          const endAtFinish = dep.type === 'FF' || dep.type === 'SF'
+          const fromX = (startFromEnd ? pred.endMs : pred.startMs) * px
+          const toX = (endAtFinish ? succ.endMs : succ.startMs) * px
+          const fromY = HEADER_HEIGHT + predRow * cellHeight + cellHeight / 2
+          const toY = HEADER_HEIGHT + succRow * cellHeight + cellHeight / 2
+          // Same router as the on-screen Gantt: no leftward leg across a bar.
+          const pts = dependencyArrowPoints({
+            x1: fromX, y1: fromY, x2: toX, y2: toY,
+            barH: cellHeight * 0.56,
+            leaveRight: startFromEnd,
+            enterLeft: !endAtFinish
+          })
+          for (let i = 1; i < pts.length; i++) {
+            chart.line(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1], LINK_COLOR, 0.9)
+          }
+          const [w1, w2] = arrowHead(pts)
+          chart.line(toX, toY, w1[0], w1[1], LINK_COLOR, 0.9)
+          chart.line(toX, toY, w2[0], w2[1], LINK_COLOR, 0.9)
+        })
+      })
+    })
+  }
+
+  // Bars: one row per template task, one bar per cycle instance.
   rows.forEach((row, i) => {
     const y = HEADER_HEIGHT + i * cellHeight
     instancesOf(row.task.id).forEach(id => {
@@ -208,37 +251,6 @@ export function renderReportGanttSvg(options: ReportGanttSvgOptions): string {
       }
     })
   })
-
-  // Dependency arrows between the projected instances.
-  if (config.showDependencies !== false) {
-    rows.forEach(row => {
-      instancesOf(row.task.id).forEach(id => {
-        const succ = schedule.byId[id]
-        if (!succ) return
-        const succRow = rowOf.get(row.task.id) ?? 0
-        ;(succ.module.predecessors ?? []).forEach(dep => {
-          const pred = schedule.byId[dep.fromId]
-          if (!pred) return
-          // Container choices are stored on their latest leaf. Draw the edge
-          // on the picked container row so it matches the on-screen Gantt.
-          const displayId = predecessorDisplayId(schedule, pred.id)
-          const predTemplate = expansion.instanceToTemplate[displayId] ?? displayId
-          const predRow = rowOf.get(predTemplate) ?? rowOf.get(displayId)
-          if (predRow === undefined) return
-          const fromX = (dep.type === 'SS' || dep.type === 'SF' ? pred.startMs : pred.endMs) * px
-          const toX = (dep.type === 'FF' || dep.type === 'SF' ? succ.endMs : succ.startMs) * px
-          const fromY = HEADER_HEIGHT + predRow * cellHeight + cellHeight / 2
-          const toY = HEADER_HEIGHT + succRow * cellHeight + cellHeight / 2
-          const elbow = Math.max(fromX + 8, toX - 12)
-          chart.line(fromX, fromY, elbow, fromY, LINK_COLOR, 0.9)
-          chart.line(elbow, fromY, elbow, toY, LINK_COLOR, 0.9)
-          chart.line(elbow, toY, toX, toY, LINK_COLOR, 0.9)
-          chart.line(toX, toY, toX - 5, toY - 3, LINK_COLOR, 0.9)
-          chart.line(toX, toY, toX - 5, toY + 3, LINK_COLOR, 0.9)
-        })
-      })
-    })
-  }
 
   return surface.toSvg()
 }

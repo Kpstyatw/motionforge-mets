@@ -374,6 +374,8 @@
     "color": "色",
     "applyColorToChildren": "すべての下位ノードに適用",
     "colorHint": "ガントバー、リソースレーン、Excel の色列と PDF に使用します。チェックするとサブツリー全体に適用され、未チェックの場合はこのノードのみ変更されます。",
+    "colorReserved": "この色は依存関係の矢印用に予約されています",
+    "colorReservedHint": "黒は依存関係の線専用です。バーには別の色を選んでください。",
     "kind": {
       "module": "モジュール",
       "mechanism": "機構",

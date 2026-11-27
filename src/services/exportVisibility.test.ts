@@ -184,7 +184,7 @@ describe('exports mirror Gantt visibility', () => {
     ]
     const { doc } = renderReport({ modules })
     const centreY = (row: number) => 40 + row * 34 + 17 // header + row height + half
-    const edgeYs = [...doc.html.matchAll(/<line[^>]*y1="([\d.]+)"[^>]*stroke="#f97316"/g)]
+    const edgeYs = [...doc.html.matchAll(/<line[^>]*y1="([\d.]+)"[^>]*stroke="#000000"/g)]
       .map(match => Number(match[1]))
     expect(edgeYs).toContain(centreY(3)) // B row, not S row
     expect(edgeYs).toContain(centreY(2)) // A row

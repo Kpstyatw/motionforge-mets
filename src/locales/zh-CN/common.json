@@ -374,6 +374,8 @@
     "color": "颜色",
     "applyColorToChildren": "同步到所有下级",
     "colorHint": "颜色用于甘特条、资源泳道、Excel 颜色列和 PDF；勾选后同步给整棵子树，未勾选只改当前节点。",
+    "colorReserved": "该颜色保留给依赖箭头",
+    "colorReservedHint": "黑色专用于依赖连线，请为柱形图选择其他颜色。",
     "kind": {
       "module": "模块",
       "mechanism": "机构",

@@ -605,3 +605,34 @@ describe('remembered time scale', () => {
     expect(explicit.timeConfig).toMatchObject({ scaleMs: 200, precisionMs: 10, displayUnit: 'ms' })
   })
 })
+
+describe('dependency arrow colour stays reserved', () => {
+  it('migrateProject replaces black bars from legacy/imported files', () => {
+    const migrated = migrateProject({
+      name: 'legacy',
+      modules: [{ ...mk('A', 0, 100), color: '#000000' }],
+      resources: [{ id: 'R1', name: '抓手', color: '#000' }]
+    } as never)
+    expect(migrated.modules[0].color).toBe('#3b82f6')
+    expect(migrated.resources[0].color).toBe('#3b82f6')
+  })
+
+  it('setTaskColor refuses black but accepts normal colours', () => {
+    load([{ ...mk('A', 0, 100), color: '#10b981' }])
+    useProjectStore.getState().setTaskColor('A', '#000000')
+    expect(useProjectStore.getState().project!.modules[0].color).toBe('#10b981')
+    useProjectStore.getState().setTaskColor('A', '#ef4444')
+    expect(useProjectStore.getState().project!.modules[0].color).toBe('#ef4444')
+  })
+
+  it('resource colour edits normalise black, including a combined name patch', () => {
+    load([mk('A', 0, 100)])
+    const id = useProjectStore.getState().addResource({ name: '抓手', color: '#000000' })
+    expect(useProjectStore.getState().project!.resources[0].color).toBe('#3b82f6')
+    useProjectStore.getState().updateResource(id, { color: '#000' })
+    expect(useProjectStore.getState().project!.resources[0].color).toBe('#3b82f6')
+    useProjectStore.getState().updateResource(id, { name: '新抓手', color: '#000000' })
+    expect(useProjectStore.getState().project!.resources[0].name).toBe('新抓手')
+    expect(useProjectStore.getState().project!.resources[0].color).toBe('#3b82f6')
+  })
+})

@@ -22,6 +22,7 @@ import {
   NameIssueReason, NameScope, uniqueName
 } from '@/lib/nameValidation'
 import { canBeParentOf, refreshSubtreeLabels } from '@/lib/hierarchy'
+import { isArrowReservedColor, safeBarColor } from '@/lib/dependencyArrow'
 import { ParentTimeChange } from '@/lib/parentTimeConstraint'
 
 /**
@@ -167,7 +168,10 @@ export function migrateProject(input: Partial<ProjectData> & { modules?: ModuleD
   // Recompute display codes from the tree, so legacy T01/T02 projects and
   // imported workbooks immediately gain hierarchy-aware numbering.
   const normalized = renumberHierarchyCodes(normalizeModules(input.modules ?? [], timeConfig))
+  // Black is reserved for dependency arrows. Normalise legacy/imported files
+  // that happen to use it so a bar can never hide an arrow.
   const modules = materializeSubActionTimes(normalized)
+    .map(m => ({ ...m, color: safeBarColor(m.color, MODULE_COLORS[0]) }))
   // Migrate legacy node-side ownership (ModuleData.resourceId = R) to the new
   // resource-side ownerNodeId, so old files gain one-to-many support. The node
   // field is kept as a mirror for older readers.
@@ -193,7 +197,7 @@ export function migrateProject(input: Partial<ProjectData> & { modules?: ModuleD
       id: r.id || uuidv4(),
       name: r.name || '资源',
       type: r.type,
-      color: r.color,
+      color: safeBarColor(r.color, MODULE_COLORS[0]),
       notes: r.notes,
       parentId: r.parentId,
       ownerNodeId: r.ownerNodeId ?? legacyOwner.get(r.id ?? ''),
@@ -812,6 +816,8 @@ export const useProjectStore = create<ProjectState>()(
       if (!state.project) return
       // Accept native picker values and the 6-digit form used by Excel.
       const normalized = color.startsWith('#') ? color : `#${color.replace(/^#/, '')}`
+      // Defensive: black is the dependency-arrow colour, never a bar colour.
+      if (isArrowReservedColor(normalized)) return
       const targets = new Set([id, ...(applyToDescendants ? collectDescendantIds(state.project.modules, id) : [])])
       const next = state.project.modules.map(m => targets.has(m.id) ? { ...m, color: normalized } : m)
       commit(state, next)
@@ -842,7 +848,7 @@ export const useProjectStore = create<ProjectState>()(
           id,
           name: explicit ?? uniqueName(project, 'resource', '新资源'),
           type: resource?.type,
-          color: resource?.color,
+          color: safeBarColor(resource?.color, MODULE_COLORS[0]),
           notes: resource?.notes,
           parentId: resource?.parentId,
           ownerNodeId: resource?.ownerNodeId,
@@ -861,6 +867,9 @@ export const useProjectStore = create<ProjectState>()(
       const r = project.resources.find(x => x.id === id)
       if (!r) return false
       let nextPatch = patch
+      if (patch.color !== undefined) {
+        nextPatch = { ...nextPatch, color: safeBarColor(patch.color, MODULE_COLORS[0]) }
+      }
       if (patch.name !== undefined) {
         const trimmed = patch.name.trim()
         const verdict = checkNewName(project, 'resource', trimmed, id)
@@ -870,7 +879,7 @@ export const useProjectStore = create<ProjectState>()(
           })
           return false
         }
-        nextPatch = { ...patch, name: trimmed }
+        nextPatch = { ...nextPatch, name: trimmed }
       }
       set(state => {
         if (!state.project) return
